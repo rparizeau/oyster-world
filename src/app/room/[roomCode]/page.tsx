@@ -212,7 +212,7 @@ export default function RoomPage() {
       setPhaseKey((k) => k + 1);
     });
 
-    channel.bind('phase-changed', (data: { phase: string; blackCard?: BlackCard; czarId?: string; phaseEndsAt?: number }) => {
+    channel.bind('phase-changed', (data: { phase: string; blackCard?: BlackCard; czarId?: string; czarIndex?: number; currentRound?: number; phaseEndsAt?: number }) => {
       setGameState((prev) => {
         if (!prev) return prev;
         return {
@@ -220,6 +220,8 @@ export default function RoomPage() {
           phase: data.phase as GameState['phase'],
           blackCard: data.blackCard ?? prev.blackCard,
           phaseEndsAt: data.phaseEndsAt ?? null,
+          czarIndex: data.czarIndex ?? prev.czarIndex,
+          currentRound: data.currentRound ?? prev.currentRound,
           submissions: data.phase === 'czar_reveal' || data.phase === 'submitting' ? {} : prev.submissions,
           revealOrder: data.phase === 'czar_reveal' || data.phase === 'submitting' ? [] : prev.revealOrder,
           roundWinnerId: data.phase === 'czar_reveal' || data.phase === 'submitting' ? null : prev.roundWinnerId,

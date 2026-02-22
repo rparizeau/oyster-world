@@ -87,6 +87,8 @@ export async function POST(request: Request) {
         phase: 'judging',
         blackCard: newGameState.blackCard,
         czarId: room.players[newGameState.czarIndex]?.id,
+        czarIndex: newGameState.czarIndex,
+        currentRound: newGameState.currentRound,
       });
 
       await pusher.trigger(roomChannel(roomCode), 'submissions-revealed', {

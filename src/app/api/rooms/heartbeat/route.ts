@@ -36,6 +36,8 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
           phase: 'submitting',
           blackCard: newGame.blackCard,
           czarId: room.players[newGame.czarIndex]?.id,
+          czarIndex: newGame.czarIndex,
+          currentRound: newGame.currentRound,
           phaseEndsAt: newGame.phaseEndsAt,
         });
       } catch {
@@ -64,6 +66,8 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
           phase: 'czar_reveal',
           blackCard: newGame.blackCard,
           czarId: updated.players[newGame.czarIndex]?.id,
+          czarIndex: newGame.czarIndex,
+          currentRound: newGame.currentRound,
           phaseEndsAt: newGame.phaseEndsAt,
         });
       } catch {
@@ -160,6 +164,8 @@ async function executeBotSubmissions(roomCode: string): Promise<void> {
           phase: 'judging',
           blackCard: currentGame.blackCard,
           czarId: room.players[currentGame.czarIndex]?.id,
+          czarIndex: currentGame.czarIndex,
+          currentRound: currentGame.currentRound,
         });
 
         await pusher.trigger(roomChannel(roomCode), 'submissions-revealed', {
