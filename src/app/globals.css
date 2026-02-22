@@ -1,0 +1,256 @@
+@import "tailwindcss";
+
+/* Force dark theme */
+:root {
+  --background: #0a0a0a;
+  --foreground: #f0f0f0;
+  --card-white: #f5f5f5;
+  --card-white-text: #1a1a1a;
+  --card-black: #1a1a1a;
+  --card-black-text: #ffffff;
+  --accent: #8b5cf6;
+  --accent-hover: #7c3aed;
+  --accent-dim: #6d28d9;
+  --success: #22c55e;
+  --success-dim: #16a34a;
+  --danger: #ef4444;
+  --danger-dim: #dc2626;
+  --warning: #f59e0b;
+  --muted: #71717a;
+  --muted-light: #a1a1aa;
+  --surface: #18181b;
+  --surface-light: #27272a;
+  --surface-lighter: #3f3f46;
+  --border: #3f3f46;
+  --border-light: #52525b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card-white: var(--card-white);
+  --color-card-white-text: var(--card-white-text);
+  --color-card-black: var(--card-black);
+  --color-card-black-text: var(--card-black-text);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-dim: var(--accent-dim);
+  --color-success: var(--success);
+  --color-success-dim: var(--success-dim);
+  --color-danger: var(--danger);
+  --color-danger-dim: var(--danger-dim);
+  --color-warning: var(--warning);
+  --color-muted: var(--muted);
+  --color-muted-light: var(--muted-light);
+  --color-surface: var(--surface);
+  --color-surface-light: var(--surface-light);
+  --color-surface-lighter: var(--surface-lighter);
+  --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-fade-in-up: fade-in-up 0.4s ease-out;
+  --animate-fade-in-down: fade-in-down 0.3s ease-out;
+  --animate-slide-up: slide-up 0.3s ease-out;
+  --animate-scale-in: scale-in 0.2s ease-out;
+  --animate-pulse-soft: pulse-soft 2s ease-in-out infinite;
+  --animate-card-deal: card-deal 0.3s ease-out;
+  --animate-card-select: card-select 0.15s ease-out;
+  --animate-winner-reveal: winner-reveal 0.5s ease-out;
+  --animate-bounce-in: bounce-in 0.4s ease-out;
+  --animate-shimmer: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes card-deal {
+  from { transform: translateY(-20px) scale(0.95); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes card-select {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+
+@keyframes winner-reveal {
+  0% { transform: scale(0.8); opacity: 0; }
+  60% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes bounce-in {
+  0% { transform: scale(0.3); opacity: 0; }
+  50% { transform: scale(1.05); }
+  70% { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-lighter);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-light);
+}
+
+/* Card base styles */
+.card-white {
+  background: var(--card-white);
+  color: var(--card-white-text);
+  border-radius: 12px;
+  padding: 16px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+}
+
+.card-white::after {
+  content: "Terrible People";
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  opacity: 0.15;
+  letter-spacing: 0.03em;
+}
+
+.card-white:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.card-black {
+  background: var(--card-black);
+  color: var(--card-black-text);
+  border-radius: 12px;
+  padding: 24px;
+  font-weight: 700;
+  font-size: 1.2rem;
+  line-height: 1.5;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  border: 2px solid var(--surface-lighter);
+  position: relative;
+}
+
+.card-black::after {
+  content: "Terrible People";
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  opacity: 0.2;
+  letter-spacing: 0.03em;
+}
+
+.card-black .blank {
+  display: inline-block;
+  min-width: 80px;
+  border-bottom: 3px solid var(--card-black-text);
+  margin: 0 4px;
+  vertical-align: baseline;
+}
+
+/* Toast */
+.toast-enter {
+  animation: fade-in-down 0.3s ease-out;
+}
+
+.toast-exit {
+  animation: fade-in-down 0.3s ease-in reverse;
+}
+
+/* Horizontal card scroll for mobile */
+.hand-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hand-scroll > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
+/* Skeleton loading */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-light) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* Connection status dot */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.connected { background: var(--success); }
+.status-dot.reconnecting { background: var(--warning); animation: pulse-soft 1s ease-in-out infinite; }
+.status-dot.disconnected { background: var(--danger); }

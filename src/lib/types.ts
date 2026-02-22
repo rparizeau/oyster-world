@@ -1,0 +1,96 @@
+// --- Room & Player ---
+
+export interface Room {
+  // Identity
+  roomCode: string;          // 6-char uppercase alphanumeric (e.g., "X7KQ2M")
+  createdAt: number;         // Unix timestamp
+
+  // Lifecycle
+  status: 'waiting' | 'playing' | 'finished';
+  ownerId: string;           // Current room owner (transfers on leave)
+
+  // Players (ordered by join time)
+  players: Player[];         // Always length 4 (bots fill empty seats)
+
+  // Game state (null until game starts)
+  game: GameState | null;
+}
+
+export interface Player {
+  id: string;                // UUID generated on join
+  name: string;              // Display name (entered by user)
+  isBot: boolean;
+  isConnected: boolean;      // Tracks active connection
+  joinedAt: number;
+  score: number;
+}
+
+// --- Game State (CAH Module) ---
+
+export interface GameState {
+  // Round tracking
+  currentRound: number;
+  targetScore: number;       // Default: 7 (first to X wins)
+
+  // Card Czar rotation
+  czarIndex: number;         // Index in players array
+
+  // Current round
+  phase: 'czar_reveal' | 'submitting' | 'judging' | 'round_result' | 'game_over';
+  phaseEndsAt: number | null;    // Unix timestamp — when current phase auto-advances
+  botActionAt: number | null;    // Unix timestamp — when pending bot action should execute
+  blackCard: BlackCard;
+
+  // Submissions (keyed by player ID)
+  submissions: Record<string, WhiteCard[]>;
+
+  // Reveal order (shuffled player IDs — hides who submitted what during judging)
+  revealOrder: string[];
+
+  // Winner of current round
+  roundWinnerId: string | null;
+
+  // Hands (keyed by player ID)
+  hands: Record<string, WhiteCard[]>;
+
+  // Deck tracking
+  blackDeck: BlackCard[];    // Remaining black cards
+  whiteDeck: WhiteCard[];    // Remaining white cards
+  discardWhite: WhiteCard[]; // Used white cards
+  discardBlack: BlackCard[]; // Used black cards
+}
+
+// --- Cards ---
+
+export interface BlackCard {
+  id: string;
+  text: string;              // Contains underscore(s) "_" as blanks
+  pick: number;              // How many white cards to play (1 or 2)
+}
+
+export interface WhiteCard {
+  id: string;
+  text: string;
+}
+
+// --- Player Session ---
+
+export interface PlayerSession {
+  playerId: string;
+  playerName: string;
+  roomCode: string;
+  joinedAt: number;
+}
+// TTL: 2 hours (auto-cleanup)
+
+// --- API Errors ---
+
+export interface ApiError {
+  error: string;    // Human-readable message
+  code: string;     // Machine-readable code
+}
+
+// Error codes:
+// ROOM_NOT_FOUND, ROOM_FULL, GAME_IN_PROGRESS, NOT_OWNER,
+// INVALID_PHASE, ALREADY_SUBMITTED, INVALID_SUBMISSION,
+// UNAUTHORIZED, RACE_CONDITION

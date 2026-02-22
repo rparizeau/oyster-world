@@ -1,0 +1,11 @@
+export const HAND_SIZE = 10;
+export const MAX_PLAYERS = 4;
+export const DEFAULT_TARGET_SCORE = 7;
+export const BOT_SUBMIT_DELAY_RANGE_MS = [2000, 5000] as const;
+export const BOT_JUDGE_DELAY_MS = 3000;
+export const CZAR_REVEAL_DURATION_MS = 3000;
+export const ROUND_RESULT_DURATION_MS = 5000;
+export const HEARTBEAT_INTERVAL_MS = 10000;
+export const DISCONNECT_TIMEOUT_MS = 30000;
+export const BOT_REPLACEMENT_TIMEOUT_MS = 60000;
+export const ROOM_TTL_SECONDS = 7200; // 2 hours
