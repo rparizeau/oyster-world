@@ -4,7 +4,10 @@ import { getPusherServer, roomChannel } from '@/lib/pusher';
 import { createBotForSeat } from '@/lib/utils';
 import { roomNotFound, unauthorized, apiError } from '@/lib/errors';
 import { BOT_SUBMIT_DELAY_RANGE_MS, BOT_JUDGE_DELAY_MS } from '@/lib/constants';
-import { getBotActionTimestamp } from '@/lib/bots';
+import { getBotActionTimestamp } from '@/lib/games/terrible-people/bots';
+import { BOT_MOVE_DELAY_MS } from '@/lib/games/4-kate/constants';
+import type { FourKateState } from '@/lib/games/4-kate';
+import type { GameState } from '@/lib/types';
 
 export async function POST(request: Request) {
   let body: { roomCode?: string; playerId?: string };
@@ -78,39 +81,56 @@ export async function POST(request: Request) {
     // Handle game-in-progress bot takeover
     let game = current.game;
     if (game && current.status === 'playing') {
-      const hands = { ...game.hands };
-      const submissions = { ...game.submissions };
+      if (current.gameId === 'terrible-people') {
+        const tpGame = game as GameState;
+        const hands = { ...tpGame.hands };
+        const submissions = { ...tpGame.submissions };
 
-      // Bot inherits the departing player's hand
-      if (hands[playerId]) {
-        hands[bot.id] = hands[playerId];
-        delete hands[playerId];
+        if (hands[playerId]) {
+          hands[bot.id] = hands[playerId];
+          delete hands[playerId];
+        }
+
+        if (submissions[playerId]) {
+          submissions[bot.id] = submissions[playerId];
+          delete submissions[playerId];
+        }
+
+        let botActionAt = tpGame.botActionAt;
+
+        if (tpGame.phase === 'submitting' && !submissions[bot.id] && idx !== tpGame.czarIndex) {
+          botActionAt = getBotActionTimestamp(BOT_SUBMIT_DELAY_RANGE_MS);
+        }
+
+        if (tpGame.phase === 'judging' && idx === tpGame.czarIndex && tpGame.roundWinnerId === null) {
+          botActionAt = Date.now() + BOT_JUDGE_DELAY_MS;
+        }
+
+        const revealOrder = tpGame.revealOrder.map((id) =>
+          id === playerId ? bot.id : id
+        );
+
+        game = { ...tpGame, hands, submissions, botActionAt, revealOrder };
+      } else if (current.gameId === '4-kate') {
+        const fkGame = game as FourKateState;
+        const players = { ...fkGame.players };
+
+        // Transfer the departing player's color to the bot
+        if (players.red === playerId) {
+          players.red = bot.id;
+        } else if (players.yellow === playerId) {
+          players.yellow = bot.id;
+        }
+
+        let botActionAt = fkGame.botActionAt;
+        // If it's now the bot's turn, set botActionAt
+        const currentTurnPlayerId = fkGame.currentTurn === 'red' ? players.red : players.yellow;
+        if (fkGame.phase === 'playing' && currentTurnPlayerId === bot.id) {
+          botActionAt = Date.now() + BOT_MOVE_DELAY_MS;
+        }
+
+        game = { ...fkGame, players, botActionAt };
       }
-
-      // Transfer any existing submission
-      if (submissions[playerId]) {
-        submissions[bot.id] = submissions[playerId];
-        delete submissions[playerId];
-      }
-
-      let botActionAt = game.botActionAt;
-
-      // If player hadn't submitted and we're in submitting phase, set bot action
-      if (game.phase === 'submitting' && !submissions[bot.id] && idx !== game.czarIndex) {
-        botActionAt = getBotActionTimestamp(BOT_SUBMIT_DELAY_RANGE_MS);
-      }
-
-      // If departing player was Czar during judging, set bot action to judge
-      if (game.phase === 'judging' && idx === game.czarIndex && game.roundWinnerId === null) {
-        botActionAt = Date.now() + BOT_JUDGE_DELAY_MS;
-      }
-
-      // Update revealOrder to use bot id
-      const revealOrder = game.revealOrder.map((id) =>
-        id === playerId ? bot.id : id
-      );
-
-      game = { ...game, hands, submissions, botActionAt, revealOrder };
     }
 
     return { ...current, players: updatedPlayers, ownerId: newOwnerId, game };

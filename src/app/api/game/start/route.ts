@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getRoom, atomicRoomUpdate, refreshRoomTTL } from '@/lib/redis';
 import { getPusherServer, roomChannel, playerChannel } from '@/lib/pusher';
-import { initializeGame, startSubmittingPhase } from '@/lib/game-engine';
-import { loadCards } from '@/lib/cards';
+import { getGameModule } from '@/lib/games/loader';
+import { initializeGame, startSubmittingPhase } from '@/lib/games/terrible-people';
+import { loadCards } from '@/lib/games/terrible-people';
 import { roomNotFound, notOwner, apiError, invalidPhase } from '@/lib/errors';
+import type { Room, GameState } from '@/lib/types';
 
 export async function POST(request: Request) {
   let body: { roomCode?: string; playerId?: string };
@@ -35,9 +37,14 @@ export async function POST(request: Request) {
     return invalidPhase();
   }
 
-  const cards = loadCards();
-  const now = Date.now();
-  const gameState = initializeGame(room, cards, now);
+  // Look up game module
+  const gameModule = getGameModule(room.gameId);
+  if (!gameModule) {
+    return apiError('Unknown game module', 'INVALID_GAME', 400);
+  }
+
+  // Use the GameModule interface for all games
+  const gameState = gameModule.initialize(room.players) as Room['game'];
 
   const updated = await atomicRoomUpdate(roomCode, (current) => {
     // Double-check status (idempotent)
@@ -59,36 +66,48 @@ export async function POST(request: Request) {
 
   const pusher = getPusherServer();
 
-  // Send sanitized game state to the room (no hands, no decks)
-  try {
-    await pusher.trigger(roomChannel(roomCode), 'game-started', {
-      gameState: {
-        currentRound: gameState.currentRound,
-        targetScore: gameState.targetScore,
-        czarIndex: gameState.czarIndex,
-        phase: gameState.phase,
-        phaseEndsAt: gameState.phaseEndsAt,
-        blackCard: gameState.blackCard,
-        submissions: {},
-        revealOrder: [],
-        roundWinnerId: null,
-      },
-    });
-  } catch {
-    // Non-fatal
-  }
+  if (room.gameId === 'terrible-people') {
+    // Terrible People: send sanitized state + private hands
+    const tpState = gameState as GameState;
+    try {
+      await pusher.trigger(roomChannel(roomCode), 'game-started', {
+        gameState: {
+          currentRound: tpState.currentRound,
+          targetScore: tpState.targetScore,
+          czarIndex: tpState.czarIndex,
+          phase: tpState.phase,
+          phaseEndsAt: tpState.phaseEndsAt,
+          blackCard: tpState.blackCard,
+          submissions: {},
+          revealOrder: [],
+          roundWinnerId: null,
+        },
+      });
+    } catch {
+      // Non-fatal
+    }
 
-  // Send each player their private hand
-  for (const player of updated.players) {
-    const hand = gameState.hands[player.id];
-    if (hand) {
-      try {
-        await pusher.trigger(playerChannel(player.id), 'hand-updated', {
-          hand,
-        });
-      } catch {
-        // Non-fatal
+    for (const player of updated.players) {
+      const hand = tpState.hands[player.id];
+      if (hand) {
+        try {
+          await pusher.trigger(playerChannel(player.id), 'hand-updated', {
+            hand,
+          });
+        } catch {
+          // Non-fatal
+        }
       }
+    }
+  } else {
+    // Generic: send full sanitized state (e.g., 4 Kate is full information)
+    const sanitized = gameModule.sanitizeForPlayer(gameState, '');
+    try {
+      await pusher.trigger(roomChannel(roomCode), 'game-started', {
+        gameState: sanitized,
+      });
+    } catch {
+      // Non-fatal
     }
   }
 

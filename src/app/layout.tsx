@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Terrible People",
-  description: "A real-time multiplayer party game for terrible people",
+  title: "Oyster World",
+  description: "Pick a game. Start some trouble.",
 };
 
 export const viewport: Viewport = {

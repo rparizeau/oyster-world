@@ -12,25 +12,37 @@ export async function GET(
   if (!room) return roomNotFound();
 
   // Sanitize: remove game hands (private) and deck info
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let sanitizedGame: any = null;
+  if (room.game) {
+    // For Terrible People, strip hands/decks
+    if (room.gameId === 'terrible-people') {
+      const g = room.game as import('@/lib/types').GameState;
+      sanitizedGame = {
+        currentRound: g.currentRound,
+        targetScore: g.targetScore,
+        czarIndex: g.czarIndex,
+        phase: g.phase,
+        phaseEndsAt: g.phaseEndsAt,
+        blackCard: g.blackCard,
+        submissions: g.submissions,
+        revealOrder: g.revealOrder,
+        roundWinnerId: g.roundWinnerId,
+      };
+    } else {
+      // For other games, return game state as-is (full info games like Connect 4)
+      sanitizedGame = room.game;
+    }
+  }
+
   const sanitized = {
     roomCode: room.roomCode,
     createdAt: room.createdAt,
     status: room.status,
     ownerId: room.ownerId,
+    gameId: room.gameId,
     players: room.players,
-    game: room.game
-      ? {
-          currentRound: room.game.currentRound,
-          targetScore: room.game.targetScore,
-          czarIndex: room.game.czarIndex,
-          phase: room.game.phase,
-          phaseEndsAt: room.game.phaseEndsAt,
-          blackCard: room.game.blackCard,
-          submissions: room.game.submissions,
-          revealOrder: room.game.revealOrder,
-          roundWinnerId: room.game.roundWinnerId,
-        }
-      : null,
+    game: sanitizedGame,
   };
 
   return NextResponse.json(sanitized);

@@ -5,6 +5,8 @@ import { useRouter, useParams } from 'next/navigation';
 import { getPusherClient, roomChannel, playerChannel } from '@/lib/pusher';
 import { HEARTBEAT_INTERVAL_MS } from '@/lib/constants';
 import type { Room, Player, GameState, WhiteCard, BlackCard } from '@/lib/types';
+import type { FourKateState, CellColor } from '@/lib/games/4-kate';
+import FourKateGameView from '@/lib/games/4-kate/components/FourKateGameView';
 
 // Sanitized game state from the server (no hands, no decks)
 interface SanitizedGameState {
@@ -39,7 +41,7 @@ export default function RoomPage() {
   const [leaving, setLeaving] = useState(false);
   const [starting, setStarting] = useState(false);
 
-  // Game state
+  // Game state (Terrible People)
   const [gameState, setGameState] = useState<SanitizedGameState | null>(null);
   const [hand, setHand] = useState<WhiteCard[]>([]);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
@@ -59,6 +61,9 @@ export default function RoomPage() {
     winnerId: string;
     winnerName: string;
   } | null>(null);
+
+  // Game state (4 Kate)
+  const [fourKateState, setFourKateState] = useState<FourKateState | null>(null);
 
   // UI state
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -90,16 +95,20 @@ export default function RoomPage() {
       setRoom(data);
 
       if (data.game) {
-        setGameState(data.game);
-        if (data.game.submissions && playerIdRef.current && data.game.submissions[playerIdRef.current]) {
-          setHasSubmitted(true);
-        }
-        if (data.game.phase === 'judging' && data.game.revealOrder) {
-          const subs = data.game.revealOrder.map((id: string) => ({
-            id,
-            cards: data.game.submissions[id] || [],
-          }));
-          setRevealedSubmissions(subs);
+        if (data.gameId === '4-kate') {
+          setFourKateState(data.game as FourKateState);
+        } else {
+          setGameState(data.game);
+          if (data.game.submissions && playerIdRef.current && data.game.submissions[playerIdRef.current]) {
+            setHasSubmitted(true);
+          }
+          if (data.game.phase === 'judging' && data.game.revealOrder) {
+            const subs = data.game.revealOrder.map((id: string) => ({
+              id,
+              cards: data.game.submissions[id] || [],
+            }));
+            setRevealedSubmissions(subs);
+          }
         }
       }
     } catch {
@@ -152,7 +161,7 @@ export default function RoomPage() {
         updated[idx] = data.player;
         return { ...prev, players: updated };
       });
-      addToast(`${data.player.name} joined the room`, 'info');
+      addToast(`${data.player.name} joined the world`, 'info');
     });
 
     channel.bind('player-left', (data: { playerId: string; newOwnerId?: string; replacementBot: Player }) => {
@@ -160,7 +169,7 @@ export default function RoomPage() {
         if (!prev) return prev;
         const leavingPlayer = prev.players.find((p) => p.id === data.playerId);
         if (leavingPlayer) {
-          addToast(`${leavingPlayer.name} left the room`, 'warning');
+          addToast(`${leavingPlayer.name} left the world`, 'warning');
         }
         const idx = prev.players.findIndex((p) => p.id === data.playerId);
         if (idx === -1) return prev;
@@ -171,6 +180,15 @@ export default function RoomPage() {
           players: updated,
           ownerId: data.newOwnerId ?? prev.ownerId,
         };
+      });
+
+      // Update 4 Kate state: bot inherits player's color
+      setFourKateState((prev) => {
+        if (!prev) return prev;
+        const players = { ...prev.players };
+        if (players.red === data.playerId) players.red = data.replacementBot.id;
+        if (players.yellow === data.playerId) players.yellow = data.replacementBot.id;
+        return { ...prev, players };
       });
     });
 
@@ -201,9 +219,19 @@ export default function RoomPage() {
 
     // --- Game events ---
 
-    channel.bind('game-started', (data: { gameState: SanitizedGameState }) => {
-      setRoom((prev) => prev ? { ...prev, status: 'playing' } : prev);
-      setGameState(data.gameState);
+    channel.bind('game-started', (data: { gameState: SanitizedGameState | FourKateState }) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        // Detect if this is a 4 Kate game
+        if (prev.gameId === '4-kate' || ('board' in data.gameState)) {
+          setFourKateState(data.gameState as FourKateState);
+          setGameState(null);
+        } else {
+          setGameState(data.gameState as SanitizedGameState);
+          setFourKateState(null);
+        }
+        return { ...prev, status: 'playing' };
+      });
       setHasSubmitted(false);
       setSelectedCards([]);
       setRevealedSubmissions([]);
@@ -279,13 +307,53 @@ export default function RoomPage() {
     });
 
     channel.bind('game-over', (data: {
-      finalScores: Record<string, number>;
-      winnerId: string;
-      winnerName: string;
+      finalScores?: Record<string, number>;
+      winnerId?: string;
+      winnerName?: string;
+      // 4 Kate fields
+      winner?: string | null;
+      winningCells?: [number, number][] | null;
+      finalBoard?: CellColor[][];
+      isDraw?: boolean;
     }) => {
-      setGameOver(data);
-      setGameState((prev) => prev ? { ...prev, phase: 'game_over' } : prev);
+      // Check if this is a 4 Kate game-over
+      if ('finalBoard' in data) {
+        setFourKateState((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            phase: 'game_over',
+            winner: data.winner ?? null,
+            winningCells: data.winningCells ?? null,
+            board: data.finalBoard ?? prev.board,
+            isDraw: data.isDraw ?? false,
+          };
+        });
+      } else {
+        setGameOver(data as { finalScores: Record<string, number>; winnerId: string; winnerName: string });
+        setGameState((prev) => prev ? { ...prev, phase: 'game_over' } : prev);
+      }
       setPhaseKey((k) => k + 1);
+    });
+
+    // 4 Kate: move-made
+    channel.bind('move-made', (data: {
+      column: number;
+      row: number;
+      color: 'red' | 'yellow';
+      currentTurn: 'red' | 'yellow';
+      board: CellColor[][];
+    }) => {
+      setFourKateState((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          board: data.board,
+          currentTurn: data.currentTurn,
+          moves: [...prev.moves, { col: data.column, row: data.row, color: data.color }],
+          turnStartedAt: Date.now(),
+        };
+      });
     });
 
     // --- Private channel: hand updates ---
@@ -424,6 +492,26 @@ export default function RoomPage() {
     }
   }
 
+  async function handleDropPiece(column: number) {
+    if (!playerId) return;
+    try {
+      const actionId = `${playerId}-${Date.now()}`;
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          actionId,
+          type: 'drop',
+          payload: { column },
+        }),
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+
   function handleCopy(type: 'code' | 'link') {
     const text = type === 'code'
       ? roomCode
@@ -480,7 +568,7 @@ export default function RoomPage() {
             </svg>
           </div>
           <p className="text-lg font-semibold text-foreground mb-1">{error}</p>
-          <p className="text-sm text-muted mb-6">Something went wrong with this room.</p>
+          <p className="text-sm text-muted mb-6">Something went wrong with this world.</p>
           <button
             onClick={() => router.push('/')}
             className="w-full rounded-xl bg-accent px-6 py-3 font-bold text-white hover:bg-accent-hover active:scale-[0.98] transition-all"
@@ -496,6 +584,27 @@ export default function RoomPage() {
 
   const isOwner = playerId === room.ownerId;
 
+  // 4 Kate game view
+  if (room.status === 'playing' && fourKateState && room.gameId === '4-kate') {
+    return (
+      <>
+        <ToastContainer toasts={toasts} />
+        <ConnectionBanner status={connectionStatus} />
+        <FourKateGameView
+          room={room}
+          gameState={fourKateState}
+          playerId={playerId}
+          isOwner={isOwner}
+          leaving={leaving}
+          onDropPiece={handleDropPiece}
+          onPlayAgain={handlePlayAgain}
+          onLeave={handleLeave}
+        />
+      </>
+    );
+  }
+
+  // Terrible People game view
   if (room.status === 'playing' && gameState) {
     return (
       <>
@@ -624,13 +733,21 @@ function LobbyView({
 
   return (
     <div className="flex min-h-dvh flex-col items-center gap-8 p-6 pt-12 animate-fade-in">
-      {/* Room code header */}
+      {/* Game indicator */}
+      {room.gameId && (
+        <div className="flex items-center gap-2 rounded-xl bg-surface-light border border-border px-4 py-2">
+          <span className="text-2xl">{room.gameId === 'terrible-people' ? '\u{1F0CF}' : room.gameId === '4-kate' ? '\u{1F534}' : ''}</span>
+          <span className="text-sm font-semibold text-foreground">{room.gameId === 'terrible-people' ? 'Terrible People' : room.gameId === '4-kate' ? '4 Kate' : room.gameId}</span>
+        </div>
+      )}
+
+      {/* World code header */}
       <div className="text-center">
-        <p className="text-xs text-muted uppercase tracking-[0.2em] font-semibold mb-1">Room Code</p>
+        <p className="text-xs text-muted uppercase tracking-[0.2em] font-semibold mb-1">World Code</p>
         <button
           onClick={() => onCopy('code')}
           className="group relative text-5xl font-mono font-black tracking-[0.15em] text-foreground hover:text-accent transition-colors"
-          title="Copy room code"
+          title="Copy world code"
         >
           {room.roomCode}
           <span className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -660,7 +777,7 @@ function LobbyView({
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs text-muted uppercase tracking-[0.15em] font-semibold">Players</h2>
-          <span className="text-xs text-muted">{humanCount}/4 humans</span>
+          <span className="text-xs text-muted">{humanCount}/{room.players.length} humans</span>
         </div>
         <div className="flex flex-col gap-2">
           {room.players.map((player, i) => (
@@ -734,12 +851,12 @@ function LobbyView({
           disabled={leaving}
           className="w-full rounded-xl border border-danger/30 px-6 py-3 font-semibold text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98] transition-all"
         >
-          {leaving ? 'Leaving...' : 'Leave Room'}
+          {leaving ? 'Leaving...' : 'Leave World'}
         </button>
       </div>
 
       <p className="text-sm text-muted text-center">
-        Share the room code to invite friends
+        Share the world code to invite friends
       </p>
     </div>
   );
@@ -926,7 +1043,7 @@ function GameView({
           disabled={leaving}
           className="w-full text-xs text-muted hover:text-danger transition-colors py-2"
         >
-          {leaving ? 'Leaving...' : 'Leave Room'}
+          {leaving ? 'Leaving...' : 'Leave World'}
         </button>
       </div>
     </div>
@@ -1273,7 +1390,7 @@ function GameOverView({
           disabled={leaving}
           className="w-full rounded-xl border border-danger/30 px-6 py-3 font-semibold text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98] transition-all"
         >
-          {leaving ? 'Leaving...' : 'Leave Room'}
+          {leaving ? 'Leaving...' : 'Leave World'}
         </button>
       </div>
     </div>

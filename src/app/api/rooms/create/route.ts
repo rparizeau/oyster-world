@@ -4,10 +4,11 @@ import { createRoom, createSession, roomExists, setHeartbeat } from '@/lib/redis
 import { getPusherServer, roomChannel } from '@/lib/pusher';
 import { generateRoomCode, generatePlayerId, fillWithBots } from '@/lib/utils';
 import { apiError } from '@/lib/errors';
+import { getGameConfig } from '@/lib/games/registry';
 import type { Room, Player, PlayerSession } from '@/lib/types';
 
 export async function POST(request: Request) {
-  let body: { name?: string };
+  let body: { name?: string; gameId?: string };
   try {
     body = await request.json();
   } catch {
@@ -17,6 +18,16 @@ export async function POST(request: Request) {
   const name = body.name?.trim();
   if (!name || name.length === 0 || name.length > 30) {
     return apiError('Name is required (max 30 characters)', 'INVALID_NAME', 400);
+  }
+
+  const gameId = body.gameId?.trim();
+  if (!gameId) {
+    return apiError('Game selection is required', 'INVALID_GAME', 400);
+  }
+
+  const gameConfig = getGameConfig(gameId);
+  if (!gameConfig) {
+    return apiError('Invalid game', 'INVALID_GAME', 400);
   }
 
   // Generate collision-checked room code
@@ -42,13 +53,14 @@ export async function POST(request: Request) {
     score: 0,
   };
 
-  const players = fillWithBots([creator]);
+  const players = fillWithBots([creator], gameConfig.maxPlayers);
 
   const room: Room = {
     roomCode,
     createdAt: now,
     status: 'waiting',
     ownerId: playerId,
+    gameId,
     players,
     game: null,
   };

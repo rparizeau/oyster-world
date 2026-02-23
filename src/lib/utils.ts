@@ -1,5 +1,4 @@
 import { Player } from './types';
-import { MAX_PLAYERS } from './constants';
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed ambiguous: 0/O, 1/I
 const ROOM_CODE_LENGTH = 6;
@@ -44,10 +43,10 @@ export function createBotForSeat(existingPlayers: Player[]): Player {
   };
 }
 
-export function fillWithBots(players: Player[]): Player[] {
+export function fillWithBots(players: Player[], maxPlayers: number): Player[] {
   const result = [...players];
   let botIndex = 0;
-  while (result.length < MAX_PLAYERS) {
+  while (result.length < maxPlayers) {
     result.push(createBot(botIndex));
     botIndex++;
   }

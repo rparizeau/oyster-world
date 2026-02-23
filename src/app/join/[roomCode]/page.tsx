@@ -1,7 +1,17 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+
+interface GameInfo {
+  name: string;
+  icon: string;
+}
+
+const GAME_INFO: Record<string, GameInfo> = {
+  'terrible-people': { name: 'Terrible People', icon: '\u{1F0CF}' },
+  '4-kate': { name: '4 Kate', icon: '\u{1F534}' },
+};
 
 export default function JoinPage() {
   const router = useRouter();
@@ -11,6 +21,19 @@ export default function JoinPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [gameId, setGameId] = useState<string | null>(null);
+
+  // Fetch room info to show which game is being played
+  useEffect(() => {
+    fetch(`/api/rooms/${roomCode}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.gameId) {
+          setGameId(data.gameId);
+        }
+      })
+      .catch(() => {});
+  }, [roomCode]);
 
   const handleJoin = useCallback(async () => {
     if (!name.trim()) {
@@ -27,7 +50,7 @@ export default function JoinPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Failed to join room');
+        setError(data.error || 'Failed to join world');
         return;
       }
       sessionStorage.setItem('playerId', data.playerId);
@@ -46,14 +69,22 @@ export default function JoinPage() {
     }
   }
 
+  const gameInfo = gameId ? GAME_INFO[gameId] : null;
+
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-8 p-6 animate-fade-in">
       <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight">Join Room</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Join World</h1>
         <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-surface-light px-4 py-2">
-          <span className="text-muted text-sm">Room</span>
+          <span className="text-muted text-sm">World</span>
           <span className="font-mono font-bold text-xl tracking-[0.2em]">{roomCode}</span>
         </div>
+        {gameInfo && (
+          <div className="mt-2 flex items-center justify-center gap-1.5">
+            <span className="text-lg">{gameInfo.icon}</span>
+            <span className="text-sm text-muted-light font-medium">{gameInfo.name}</span>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-4 w-full max-w-xs" onKeyDown={handleKeyDown}>
@@ -93,7 +124,7 @@ export default function JoinPage() {
               Joining...
             </>
           ) : (
-            'Join Game'
+            'Join World'
           )}
         </button>
 

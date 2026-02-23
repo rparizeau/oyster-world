@@ -4,9 +4,26 @@ import { getPusherServer, roomChannel, playerChannel } from '@/lib/pusher';
 import { createBotForSeat } from '@/lib/utils';
 import { DISCONNECT_TIMEOUT_MS, BOT_REPLACEMENT_TIMEOUT_MS, BOT_SUBMIT_DELAY_RANGE_MS, BOT_JUDGE_DELAY_MS } from '@/lib/constants';
 import { roomNotFound, apiError } from '@/lib/errors';
-import { shouldAdvancePhase, shouldExecuteBotAction, startSubmittingPhase, advanceRound, submitCards, judgeWinner } from '@/lib/game-engine';
-import { selectRandomCards, selectRandomWinner, getBotActionTimestamp } from '@/lib/bots';
-import type { Room } from '@/lib/types';
+import {
+  shouldAdvancePhase,
+  shouldExecuteBotAction,
+  startSubmittingPhase,
+  advanceRound,
+  submitCards,
+  judgeWinner,
+  selectRandomCards,
+  selectRandomWinner,
+  getBotActionTimestamp,
+} from '@/lib/games/terrible-people';
+import {
+  shouldExecuteBotAction as shouldExecute4KateBotAction,
+  processDropAction,
+  getBotMove,
+  getPlayerColor,
+  BOT_MOVE_DELAY_MS,
+} from '@/lib/games/4-kate';
+import type { FourKateState } from '@/lib/games/4-kate';
+import type { Room, GameState } from '@/lib/types';
 
 /**
  * Process game state advancement: phase transitions and bot actions.
@@ -16,8 +33,16 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
   const room = await getRoom(roomCode);
   if (!room || !room.game || room.status !== 'playing') return;
 
+  // Dispatch to game-specific advancement
+  if (room.gameId === '4-kate') {
+    await process4KateAdvancement(roomCode);
+    return;
+  }
+
+  if (room.gameId !== 'terrible-people') return;
+
   const now = Date.now();
-  const game = room.game;
+  const game = room.game as GameState;
   const pusher = getPusherServer();
 
   // Phase advancement: czar_reveal → submitting
@@ -25,12 +50,14 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
     const newGame = startSubmittingPhase(game, room.players, now);
 
     const updated = await atomicRoomUpdate(roomCode, (current) => {
-      if (!current.game || current.game.phase !== 'czar_reveal') return current;
-      if (!shouldAdvancePhase(current.game, now)) return current;
+      if (!current.game) return current;
+      const currentGame = current.game as GameState;
+      if (currentGame.phase !== 'czar_reveal') return current;
+      if (!shouldAdvancePhase(currentGame, now)) return current;
       return { ...current, game: newGame };
     });
 
-    if (updated && updated.game?.phase === 'submitting') {
+    if (updated && (updated.game as GameState)?.phase === 'submitting') {
       try {
         await pusher.trigger(roomChannel(roomCode), 'phase-changed', {
           phase: 'submitting',
@@ -44,7 +71,6 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
         // Non-fatal
       }
 
-      // Recurse to check if bots need to act immediately
       await processGameAdvancement(roomCode);
       return;
     }
@@ -55,12 +81,14 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
     const newGame = advanceRound(game, room.players, now);
 
     const updated = await atomicRoomUpdate(roomCode, (current) => {
-      if (!current.game || current.game.phase !== 'round_result') return current;
-      if (!shouldAdvancePhase(current.game, now)) return current;
+      if (!current.game) return current;
+      const currentGame = current.game as GameState;
+      if (currentGame.phase !== 'round_result') return current;
+      if (!shouldAdvancePhase(currentGame, now)) return current;
       return { ...current, game: newGame };
     });
 
-    if (updated && updated.game?.phase === 'czar_reveal') {
+    if (updated && (updated.game as GameState)?.phase === 'czar_reveal') {
       try {
         await pusher.trigger(roomChannel(roomCode), 'phase-changed', {
           phase: 'czar_reveal',
@@ -74,7 +102,6 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
         // Non-fatal
       }
 
-      // Send updated hands to each player
       for (const player of updated.players) {
         const hand = newGame.hands[player.id];
         if (hand) {
@@ -88,7 +115,6 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
         }
       }
 
-      // Recurse to check if czar_reveal should advance
       await processGameAdvancement(roomCode);
       return;
     }
@@ -107,19 +133,95 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
   }
 }
 
-/**
- * Execute bot card submissions.
- */
+async function process4KateAdvancement(roomCode: string): Promise<void> {
+  const room = await getRoom(roomCode);
+  if (!room || !room.game || room.status !== 'playing') return;
+  if (room.gameId !== '4-kate') return;
+
+  const now = Date.now();
+  const game = room.game as FourKateState;
+
+  if (game.phase !== 'playing') return;
+  if (!shouldExecute4KateBotAction(game, now)) return;
+
+  // Find the bot whose turn it is
+  const currentPlayerId = game.currentTurn === 'red' ? game.players.red : game.players.yellow;
+  const currentPlayer = room.players.find((p) => p.id === currentPlayerId);
+  if (!currentPlayer?.isBot) return;
+
+  // Idempotency: check move count
+  const moveCountBefore = game.moves.length;
+  const color = getPlayerColor(game, currentPlayerId);
+  if (!color) return;
+
+  const column = getBotMove(game, color);
+  const newState = processDropAction(game, currentPlayerId, column);
+
+  // If state didn't change, skip
+  if (newState === game || newState.moves.length === moveCountBefore) return;
+
+  // If game continues and next player is also a bot, set botActionAt
+  let stateToSave = newState;
+  if (newState.phase === 'playing') {
+    const nextPlayerId = newState.currentTurn === 'red' ? newState.players.red : newState.players.yellow;
+    const nextPlayer = room.players.find((p) => p.id === nextPlayerId);
+    if (nextPlayer?.isBot) {
+      stateToSave = { ...newState, botActionAt: Date.now() + BOT_MOVE_DELAY_MS };
+    }
+  }
+
+  const updated = await atomicRoomUpdate(roomCode, (current) => {
+    if (!current.game) return current;
+    const currentGame = current.game as FourKateState;
+    // Idempotency: only update if move count hasn't changed
+    if (currentGame.moves.length !== moveCountBefore) return current;
+    return { ...current, game: stateToSave };
+  });
+
+  if (!updated) return;
+
+  const pusher = getPusherServer();
+  const lastMove = stateToSave.moves[stateToSave.moves.length - 1];
+
+  if (lastMove) {
+    try {
+      await pusher.trigger(roomChannel(roomCode), 'move-made', {
+        column: lastMove.col,
+        row: lastMove.row,
+        color: lastMove.color,
+        currentTurn: stateToSave.currentTurn,
+        board: stateToSave.board,
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  if (stateToSave.phase === 'game_over') {
+    try {
+      await pusher.trigger(roomChannel(roomCode), 'game-over', {
+        winner: stateToSave.winner,
+        winningCells: stateToSave.winningCells,
+        finalBoard: stateToSave.board,
+        isDraw: stateToSave.isDraw,
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+}
+
 async function executeBotSubmissions(roomCode: string): Promise<void> {
   const room = await getRoom(roomCode);
-  if (!room || !room.game || room.game.phase !== 'submitting') return;
+  if (!room || !room.game) return;
 
-  const game = room.game;
+  const game = room.game as GameState;
+  if (game.phase !== 'submitting') return;
+
   const pusher = getPusherServer();
   let currentGame = { ...game };
   let stateChanged = false;
 
-  // Submit for all bots that haven't submitted yet
   for (let i = 0; i < room.players.length; i++) {
     if (i === game.czarIndex) continue;
     const player = room.players[i];
@@ -148,12 +250,13 @@ async function executeBotSubmissions(roomCode: string): Promise<void> {
 
   if (stateChanged) {
     const updated = await atomicRoomUpdate(roomCode, (current) => {
-      if (!current.game || current.game.phase !== 'submitting') return current;
+      if (!current.game) return current;
+      const currentGameState = current.game as GameState;
+      if (currentGameState.phase !== 'submitting') return current;
       return { ...current, game: currentGame };
     });
 
-    // If transitioned to judging, send events
-    if (updated && updated.game?.phase === 'judging') {
+    if (updated && (updated.game as GameState)?.phase === 'judging') {
       const anonymousSubmissions = currentGame.revealOrder.map((id) => ({
         id,
         cards: currentGame.submissions[id],
@@ -175,24 +278,21 @@ async function executeBotSubmissions(roomCode: string): Promise<void> {
         // Non-fatal
       }
 
-      // Recurse to check if bot Czar needs to act
       await processGameAdvancement(roomCode);
     }
   }
 }
 
-/**
- * Execute bot judgment (Czar is a bot).
- */
 async function executeBotJudgment(roomCode: string): Promise<void> {
   const room = await getRoom(roomCode);
-  if (!room || !room.game || room.game.phase !== 'judging') return;
+  if (!room || !room.game) return;
 
-  const game = room.game;
+  const game = room.game as GameState;
+  if (game.phase !== 'judging') return;
+
   const czar = room.players[game.czarIndex];
   if (!czar || !czar.isBot) return;
 
-  // Idempotent: if winner already selected, skip
   if (game.roundWinnerId !== null) return;
 
   const winnerId = selectRandomWinner(game.submissions, czar.id);
@@ -203,15 +303,16 @@ async function executeBotJudgment(roomCode: string): Promise<void> {
 
   const newGameState = result.state;
 
-  // Build score lookup
   const scores: Record<string, number> = {};
   for (const p of result.updatedPlayers) {
     scores[p.id] = p.score;
   }
 
   const updated = await atomicRoomUpdate(roomCode, (current) => {
-    if (!current.game || current.game.phase !== 'judging') return current;
-    if (current.game.roundWinnerId !== null) return current;
+    if (!current.game) return current;
+    const currentGame = current.game as GameState;
+    if (currentGame.phase !== 'judging') return current;
+    if (currentGame.roundWinnerId !== null) return current;
     const updatedPlayers = current.players.map((p) => ({
       ...p,
       score: scores[p.id] ?? p.score,
@@ -243,11 +344,6 @@ async function executeBotJudgment(roomCode: string): Promise<void> {
   } catch {
     // Non-fatal
   }
-
-  // If round_result, recurse to handle phase advancement later
-  if (newGameState.phase === 'round_result') {
-    // Don't recurse immediately — wait for phaseEndsAt
-  }
 }
 
 export async function POST(request: Request) {
@@ -278,7 +374,6 @@ export async function POST(request: Request) {
   await refreshRoomTTL(roomCode);
 
   // === GAME STATE ADVANCEMENT ===
-  // Process phase transitions and bot actions (timestamp-driven state machine)
   if (room.game && room.status === 'playing') {
     await processGameAdvancement(roomCode);
   }
@@ -288,7 +383,6 @@ export async function POST(request: Request) {
   const disconnectedIds: string[] = [];
   const replacedIds: string[] = [];
 
-  // Re-fetch room after game advancement may have changed it
   const currentRoom = await getRoom(roomCode);
   if (!currentRoom) return roomNotFound();
 
@@ -307,7 +401,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // Apply disconnection markers
   if (disconnectedIds.length > 0) {
     await atomicRoomUpdate(roomCode, (current) => {
       const updatedPlayers = current.players.map((p) => {
@@ -331,14 +424,12 @@ export async function POST(request: Request) {
     }
   }
 
-  // Apply bot replacements for long-disconnected players
   if (replacedIds.length > 0) {
     for (const id of replacedIds) {
       await handlePlayerReplacement(roomCode, id);
     }
   }
 
-  // Mark this player as connected if they were disconnected
   const latestRoom = await getRoom(roomCode);
   const latestPlayer = latestRoom?.players.find((p) => p.id === playerId);
   if (latestPlayer && !latestPlayer.isConnected && !latestPlayer.isBot) {
@@ -362,10 +453,6 @@ export async function POST(request: Request) {
   return NextResponse.json({ success: true });
 }
 
-/**
- * Handle replacing a disconnected player with a bot.
- * Also handles mid-game scenarios (bot inherits hand/score/seat).
- */
 async function handlePlayerReplacement(roomCode: string, departingPlayerId: string): Promise<void> {
   const currentRoom = await getRoom(roomCode);
   if (!currentRoom) return;
@@ -381,7 +468,6 @@ async function handlePlayerReplacement(roomCode: string, departingPlayerId: stri
     const departingPlayer = current.players[idx];
     const updatedPlayers = [...current.players];
 
-    // Bot inherits score and seat position
     const bot = {
       ...replacementBot,
       score: departingPlayer.score,
@@ -402,39 +488,54 @@ async function handlePlayerReplacement(roomCode: string, departingPlayerId: stri
     // Handle game-in-progress bot takeover
     let game = current.game;
     if (game && current.status === 'playing') {
-      const hands = { ...game.hands };
-      const submissions = { ...game.submissions };
+      if (current.gameId === 'terrible-people') {
+        const tpGame = game as GameState;
+        const hands = { ...tpGame.hands };
+        const submissions = { ...tpGame.submissions };
 
-      // Bot inherits the departing player's hand
-      if (hands[departingPlayerId]) {
-        hands[bot.id] = hands[departingPlayerId];
-        delete hands[departingPlayerId];
+        if (hands[departingPlayerId]) {
+          hands[bot.id] = hands[departingPlayerId];
+          delete hands[departingPlayerId];
+        }
+
+        if (submissions[departingPlayerId]) {
+          submissions[bot.id] = submissions[departingPlayerId];
+          delete submissions[departingPlayerId];
+        }
+
+        let botActionAt = tpGame.botActionAt;
+
+        if (tpGame.phase === 'submitting' && !submissions[bot.id] && idx !== tpGame.czarIndex) {
+          botActionAt = getBotActionTimestamp(BOT_SUBMIT_DELAY_RANGE_MS);
+        }
+
+        if (tpGame.phase === 'judging' && idx === tpGame.czarIndex && tpGame.roundWinnerId === null) {
+          botActionAt = Date.now() + BOT_JUDGE_DELAY_MS;
+        }
+
+        const revealOrder = tpGame.revealOrder.map((id) =>
+          id === departingPlayerId ? bot.id : id
+        );
+
+        game = { ...tpGame, hands, submissions, botActionAt, revealOrder };
+      } else if (current.gameId === '4-kate') {
+        const fkGame = game as FourKateState;
+        const players = { ...fkGame.players };
+
+        if (players.red === departingPlayerId) {
+          players.red = bot.id;
+        } else if (players.yellow === departingPlayerId) {
+          players.yellow = bot.id;
+        }
+
+        let botActionAt = fkGame.botActionAt;
+        const currentTurnPlayerId = fkGame.currentTurn === 'red' ? players.red : players.yellow;
+        if (fkGame.phase === 'playing' && currentTurnPlayerId === bot.id) {
+          botActionAt = Date.now() + BOT_MOVE_DELAY_MS;
+        }
+
+        game = { ...fkGame, players, botActionAt };
       }
-
-      // Transfer any submission
-      if (submissions[departingPlayerId]) {
-        submissions[bot.id] = submissions[departingPlayerId];
-        delete submissions[departingPlayerId];
-      }
-
-      let botActionAt = game.botActionAt;
-
-      // If player hadn't submitted and we're in submitting phase, set bot action
-      if (game.phase === 'submitting' && !submissions[bot.id] && idx !== game.czarIndex) {
-        botActionAt = getBotActionTimestamp(BOT_SUBMIT_DELAY_RANGE_MS);
-      }
-
-      // If departing player was Czar during judging, set bot action to judge
-      if (game.phase === 'judging' && idx === game.czarIndex && game.roundWinnerId === null) {
-        botActionAt = Date.now() + BOT_JUDGE_DELAY_MS;
-      }
-
-      // Update revealOrder to use bot id instead of departing player id
-      const revealOrder = game.revealOrder.map((id) =>
-        id === departingPlayerId ? bot.id : id
-      );
-
-      game = { ...game, hands, submissions, botActionAt, revealOrder };
     }
 
     return { ...current, players: updatedPlayers, ownerId: newOwnerId, game };

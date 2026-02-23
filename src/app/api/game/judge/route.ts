@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getRoom, atomicRoomUpdate, refreshRoomTTL } from '@/lib/redis';
 import { getPusherServer, roomChannel } from '@/lib/pusher';
-import { judgeWinner } from '@/lib/game-engine';
+import { judgeWinner } from '@/lib/games/terrible-people';
 import { roomNotFound, unauthorized, apiError, invalidPhase, alreadySubmitted, invalidSubmission } from '@/lib/errors';
+import type { GameState } from '@/lib/types';
 
 export async function POST(request: Request) {
   let body: { roomCode?: string; playerId?: string; winnerId?: string };
@@ -29,8 +30,10 @@ export async function POST(request: Request) {
 
   if (!room.game) return invalidPhase();
 
+  const game = room.game as GameState;
+
   // Use pure function
-  const result = judgeWinner(room.game, playerId, winnerId, room.players);
+  const result = judgeWinner(game, playerId, winnerId, room.players);
 
   if (!result.ok) {
     switch (result.code) {
@@ -53,11 +56,13 @@ export async function POST(request: Request) {
   const updated = await atomicRoomUpdate(roomCode, (current) => {
     if (!current.game) return null;
 
+    const currentGame = current.game as GameState;
+
     // Idempotent: if winner already selected, return current
-    if (current.game.roundWinnerId !== null) return current;
+    if (currentGame.roundWinnerId !== null) return current;
 
     // Re-validate phase
-    if (current.game.phase !== 'judging') return null;
+    if (currentGame.phase !== 'judging') return null;
 
     // Apply score updates to full Player objects
     const updatedPlayers = current.players.map((p) => ({

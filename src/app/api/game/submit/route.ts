@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getRoom, atomicRoomUpdate, refreshRoomTTL } from '@/lib/redis';
 import { getPusherServer, roomChannel } from '@/lib/pusher';
-import { submitCards } from '@/lib/game-engine';
+import { submitCards } from '@/lib/games/terrible-people';
 import { roomNotFound, unauthorized, apiError, invalidPhase, alreadySubmitted, invalidSubmission } from '@/lib/errors';
+import type { GameState } from '@/lib/types';
 
 export async function POST(request: Request) {
   let body: { roomCode?: string; playerId?: string; cardIds?: string[] };
@@ -29,8 +30,10 @@ export async function POST(request: Request) {
 
   if (!room.game) return invalidPhase();
 
+  const game = room.game as GameState;
+
   // Use pure function to calculate new state
-  const result = submitCards(room.game, playerId, cardIds, room.players);
+  const result = submitCards(game, playerId, cardIds, room.players);
 
   if (!result.ok) {
     switch (result.code) {
@@ -46,11 +49,13 @@ export async function POST(request: Request) {
   const updated = await atomicRoomUpdate(roomCode, (current) => {
     if (!current.game) return null;
 
+    const currentGame = current.game as GameState;
+
     // Idempotent check
-    if (current.game.submissions[playerId]) return current;
+    if (currentGame.submissions[playerId]) return current;
 
     // Re-validate phase in case it changed
-    if (current.game.phase !== 'submitting') return null;
+    if (currentGame.phase !== 'submitting') return null;
 
     return {
       ...current,

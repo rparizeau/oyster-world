@@ -9,11 +9,15 @@ export interface Room {
   status: 'waiting' | 'playing' | 'finished';
   ownerId: string;           // Current room owner (transfers on leave)
 
-  // Players (ordered by join time)
-  players: Player[];         // Always length 4 (bots fill empty seats)
+  // Game selection
+  gameId: string;            // From GAME_REGISTRY (e.g., 'terrible-people', '4-kate')
 
-  // Game state (null until game starts)
-  game: GameState | null;
+  // Players (ordered by join time)
+  players: Player[];         // Length varies by game (2 for 4 Kate, 4 for Terrible People)
+
+  // Game state (null until game starts, polymorphic based on gameId)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  game: GameState | Record<string, any> | null;
 }
 
 export interface Player {
