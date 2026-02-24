@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getRoom } from '@/lib/redis';
 import { roomNotFound } from '@/lib/errors';
+import type { WhosDealGameState } from '@/lib/games/whos-deal';
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ roomCode: string }> }
 ) {
   const { roomCode } = await params;
@@ -11,11 +12,14 @@ export async function GET(
 
   if (!room) return roomNotFound();
 
+  // Get playerId from query for per-player sanitization
+  const url = new URL(request.url);
+  const requestingPlayerId = url.searchParams.get('playerId') || '';
+
   // Sanitize: remove game hands (private) and deck info
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let sanitizedGame: any = null;
   if (room.game) {
-    // For Terrible People, strip hands/decks
     if (room.gameId === 'terrible-people') {
       const g = room.game as import('@/lib/types').GameState;
       sanitizedGame = {
@@ -29,8 +33,26 @@ export async function GET(
         revealOrder: g.revealOrder,
         roundWinnerId: g.roundWinnerId,
       };
+    } else if (room.gameId === 'whos-deal') {
+      const g = room.game as WhosDealGameState;
+      const handCounts: Record<string, number> = {};
+      if (g.round) {
+        for (const [pid, hand] of Object.entries(g.round.hands)) {
+          handCounts[pid] = hand.length;
+        }
+      }
+      sanitizedGame = {
+        ...g,
+        round: g.round ? {
+          ...g.round,
+          hands: undefined,
+          kitty: undefined,
+          myHand: g.round.hands[requestingPlayerId] || [],
+          handCounts,
+        } : null,
+      };
     } else {
-      // For other games, return game state as-is (full info games like Connect 4)
+      // For other games (4 Kate), return game state as-is
       sanitizedGame = room.game;
     }
   }
@@ -42,6 +64,7 @@ export async function GET(
     ownerId: room.ownerId,
     gameId: room.gameId,
     players: room.players,
+    settings: room.settings,
     game: sanitizedGame,
   };
 

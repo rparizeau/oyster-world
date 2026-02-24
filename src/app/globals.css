@@ -341,3 +341,101 @@ body {
 
 .c4-ghost.red { background: #ef4444; }
 .c4-ghost.yellow { background: #facc15; }
+
+/* === Who's Deal? (Euchre) === */
+
+.wd-card {
+  width: 52px;
+  height: 74px;
+  border-radius: 6px;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.wd-card-face {
+  background: #fff;
+  color: #1a1a1a;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.wd-card-face.red { color: #dc2626; }
+.wd-card-face.black { color: #1a1a1a; }
+
+.wd-card-back {
+  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 50%, #1e40af 100%);
+  border: 2px solid #2563eb;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.wd-card-back::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.wd-card-hand {
+  width: 60px;
+  height: 84px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 60px;
+  min-height: 84px;
+}
+
+.wd-card-hand:hover:not(.dimmed) {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.wd-card-hand.selected {
+  transform: translateY(-8px);
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
+  border-color: var(--accent);
+  border-width: 2px;
+}
+
+.wd-card-hand.dimmed {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.wd-card-trick {
+  width: 44px;
+  height: 62px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+}
+
+.wd-card-trick.winning {
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), 0 0 24px rgba(139, 92, 246, 0.3);
+  border: 2px solid var(--accent);
+}
+
+@keyframes wd-card-play {
+  from { transform: scale(0.6); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.wd-card-played {
+  animation: wd-card-play 0.25s ease-out;
+}
+
+@keyframes wd-trick-clear {
+  to { opacity: 0; transform: scale(0.8); }
+}
+
+.wd-trick-clearing {
+  animation: wd-trick-clear 0.3s ease-in forwards;
+}

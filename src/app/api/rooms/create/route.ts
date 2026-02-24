@@ -65,6 +65,17 @@ export async function POST(request: Request) {
     game: null,
   };
 
+  // Initialize default settings for Who's Deal? (team assignment + target score)
+  if (gameId === 'whos-deal') {
+    room.settings = {
+      targetScore: 10,
+      teams: {
+        a: [players[0].id, players[2].id], // Seats 0 & 2
+        b: [players[1].id, players[3].id], // Seats 1 & 3
+      },
+    };
+  }
+
   await createRoom(room);
 
   const session: PlayerSession = {

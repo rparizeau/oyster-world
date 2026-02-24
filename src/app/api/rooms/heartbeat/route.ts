@@ -23,6 +23,19 @@ import {
   BOT_MOVE_DELAY_MS,
 } from '@/lib/games/4-kate';
 import type { FourKateState } from '@/lib/games/4-kate';
+import type { WhosDealGameState } from '@/lib/games/whos-deal';
+import {
+  shouldAdvancePhase as shouldAdvanceWDPhase,
+  shouldExecuteBotAction as shouldExecuteWDBotAction,
+  advanceToNextRound,
+  computeBotTiming,
+  getSeatIndex,
+  getTeamForSeat,
+  getBotActionTimestamp as getWDBotTimestamp,
+  WhosDealError,
+} from '@/lib/games/whos-deal';
+import { getWhosDealBotAction } from '@/lib/games/whos-deal/bots';
+import { getGameModule } from '@/lib/games/loader';
 import type { Room, GameState } from '@/lib/types';
 
 /**
@@ -36,6 +49,11 @@ async function processGameAdvancement(roomCode: string): Promise<void> {
   // Dispatch to game-specific advancement
   if (room.gameId === '4-kate') {
     await process4KateAdvancement(roomCode);
+    return;
+  }
+
+  if (room.gameId === 'whos-deal') {
+    await processWhosDealAdvancement(roomCode);
     return;
   }
 
@@ -209,6 +227,219 @@ async function process4KateAdvancement(roomCode: string): Promise<void> {
       // Non-fatal
     }
   }
+}
+
+async function processWhosDealAdvancement(roomCode: string): Promise<void> {
+  const room = await getRoom(roomCode);
+  if (!room || !room.game || room.status !== 'playing') return;
+  if (room.gameId !== 'whos-deal') return;
+
+  const now = Date.now();
+  const game = room.game as WhosDealGameState;
+  const pusher = getPusherServer();
+
+  // Phase advancement: round_over → next round (after display pause)
+  if (game.round?.trumpPhase === 'round_over' && game.phase !== 'game_over' && shouldAdvanceWDPhase(game, now)) {
+    const newGame = advanceToNextRound(game, room.players);
+    if (newGame === game) return;
+
+    const updated = await atomicRoomUpdate(roomCode, (current) => {
+      if (!current.game) return current;
+      const currentGame = current.game as WhosDealGameState;
+      if (currentGame.round?.trumpPhase !== 'round_over') return current;
+      if (!shouldAdvanceWDPhase(currentGame, now)) return current;
+      return { ...current, game: newGame };
+    });
+
+    if (updated) {
+      const updatedGame = updated.game as WhosDealGameState;
+      if (updatedGame.round?.trumpPhase === 'round1') {
+        try {
+          await pusher.trigger(roomChannel(roomCode), 'new-round', {
+            dealerSeatIndex: updatedGame.dealerSeatIndex,
+            faceUpCard: updatedGame.round.faceUpCard,
+          });
+          // Send updated hands to all players
+          for (const pid of updatedGame.seats) {
+            const hand = updatedGame.round.hands[pid];
+            if (hand) {
+              await pusher.trigger(playerChannel(pid), 'hand-updated', { hand });
+            }
+          }
+        } catch {
+          // Non-fatal
+        }
+        // Continue processing in case first player is a bot
+        await processWhosDealAdvancement(roomCode);
+      }
+    }
+    return;
+  }
+
+  // Bot action execution
+  if (!shouldExecuteWDBotAction(game, now)) return;
+  if (!game.round) return;
+
+  const phase = game.round.trumpPhase;
+  if (phase === 'round_over') return;
+
+  const currentPlayerId = game.seats[game.round.currentTurnSeatIndex];
+  const currentPlayer = room.players.find(p => p.id === currentPlayerId);
+  if (!currentPlayer?.isBot) return;
+
+  // Get bot action
+  const botAction = getWhosDealBotAction(game, currentPlayerId);
+  if (botAction.type === 'noop') return;
+
+  // Process through engine
+  const gameModule = getGameModule('whos-deal');
+  if (!gameModule) return;
+
+  let newState: WhosDealGameState;
+  try {
+    newState = gameModule.processAction(game, currentPlayerId, botAction) as WhosDealGameState;
+  } catch (e) {
+    if (e instanceof WhosDealError) return; // Bot shouldn't trigger errors, but safety
+    throw e;
+  }
+
+  if (newState === game) return;
+
+  // Set bot timing for next player if needed
+  const botAt = computeBotTiming(newState, room.players);
+  if (botAt) {
+    newState = { ...newState, botActionAt: botAt };
+  }
+
+  // Idempotent atomic update
+  const updated = await atomicRoomUpdate(roomCode, (current) => {
+    if (!current.game) return current;
+    const currentGame = current.game as WhosDealGameState;
+    // Idempotency: check that the game state hasn't changed
+    if (!currentGame.round || currentGame.round.trumpPhase !== phase) return current;
+    if (currentGame.round.currentTurnSeatIndex !== game.round!.currentTurnSeatIndex) return current;
+    return { ...current, game: newState };
+  });
+
+  if (!updated) return;
+
+  // Fire Pusher events based on bot action type
+  const oldState = game;
+  const channel = roomChannel(roomCode);
+
+  try {
+    switch (botAction.type) {
+      case 'call-trump': {
+        const seatIndex = getSeatIndex(newState, currentPlayerId);
+        const goAlone = newState.round?.goingAlone || false;
+
+        if (oldState.round?.trumpPhase === 'round1') {
+          await pusher.trigger(channel, 'trump-action', {
+            seatIndex, action: 'order-up', goAlone,
+          });
+          await pusher.trigger(channel, 'trump-confirmed', {
+            trumpSuit: newState.round!.trumpSuit,
+            callingPlayer: currentPlayerId,
+            callingTeam: newState.round!.callingTeam,
+            goAlone,
+          });
+          const dealerPlayerId = newState.seats[newState.dealerSeatIndex];
+          await pusher.trigger(playerChannel(dealerPlayerId), 'hand-updated', {
+            hand: newState.round!.hands[dealerPlayerId],
+          });
+        } else if (oldState.round?.trumpPhase === 'round2') {
+          await pusher.trigger(channel, 'trump-action', {
+            seatIndex, action: 'call', suit: newState.round!.trumpSuit, goAlone,
+          });
+          await pusher.trigger(channel, 'trump-confirmed', {
+            trumpSuit: newState.round!.trumpSuit,
+            callingPlayer: currentPlayerId,
+            callingTeam: newState.round!.callingTeam,
+            goAlone,
+          });
+          await pusher.trigger(channel, 'trick-started', {
+            leadSeatIndex: newState.round!.trickLeadSeatIndex,
+          });
+        }
+        break;
+      }
+
+      case 'pass-trump': {
+        const seatIndex = getSeatIndex(oldState, currentPlayerId);
+        await pusher.trigger(channel, 'trump-action', {
+          seatIndex, action: 'pass',
+        });
+        break;
+      }
+
+      case 'discard': {
+        await pusher.trigger(channel, 'dealer-discarded', {
+          seatIndex: newState.dealerSeatIndex,
+        });
+        const dealerPlayerId = newState.seats[newState.dealerSeatIndex];
+        await pusher.trigger(playerChannel(dealerPlayerId), 'hand-updated', {
+          hand: newState.round!.hands[dealerPlayerId],
+        });
+        await pusher.trigger(channel, 'trick-started', {
+          leadSeatIndex: newState.round!.trickLeadSeatIndex,
+        });
+        break;
+      }
+
+      case 'play-card': {
+        const seatIndex = getSeatIndex(oldState, currentPlayerId);
+        const cardId = (botAction.payload as { cardId: string }).cardId;
+        const playedCard = oldState.round!.hands[currentPlayerId].find(c => c.id === cardId);
+
+        await pusher.trigger(channel, 'card-played', {
+          seatIndex, card: playedCard,
+        });
+
+        const oldTricksPlayed = oldState.round!.tricksPlayed;
+        const newTricksPlayed = newState.round!.tricksPlayed;
+
+        if (newTricksPlayed > oldTricksPlayed) {
+          const winningSeatIndex = newState.round!.trickLeadSeatIndex;
+          const winningTeam = getTeamForSeat(winningSeatIndex);
+
+          await pusher.trigger(channel, 'trick-won', {
+            winningSeatIndex, winningTeam,
+            tricksWon: newState.round!.tricksWon,
+          });
+
+          if (newState.round!.trumpPhase === 'round_over') {
+            const pointsAwarded = {
+              a: newState.teams.a.score - oldState.teams.a.score,
+              b: newState.teams.b.score - oldState.teams.b.score,
+            };
+            await pusher.trigger(channel, 'round-over', {
+              callingTeam: newState.round!.callingTeam,
+              tricksWon: newState.round!.tricksWon,
+              pointsAwarded,
+              scores: { a: newState.teams.a.score, b: newState.teams.b.score },
+              isGameOver: newState.phase === 'game_over',
+            });
+            if (newState.phase === 'game_over') {
+              await pusher.trigger(channel, 'game-over', {
+                winningTeam: newState.winningTeam,
+                finalScores: { a: newState.teams.a.score, b: newState.teams.b.score },
+              });
+            }
+          } else {
+            await pusher.trigger(channel, 'trick-started', {
+              leadSeatIndex: newState.round!.trickLeadSeatIndex,
+            });
+          }
+        }
+        break;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // Continue processing — next bot might need to act
+  await processWhosDealAdvancement(roomCode);
 }
 
 async function executeBotSubmissions(roomCode: string): Promise<void> {
@@ -535,6 +766,66 @@ async function handlePlayerReplacement(roomCode: string, departingPlayerId: stri
         }
 
         game = { ...fkGame, players, botActionAt };
+      } else if (current.gameId === 'whos-deal') {
+        const wdGame = game as WhosDealGameState;
+
+        // Update seats: replace departing player with bot
+        const seats = wdGame.seats.map(id => id === departingPlayerId ? bot.id : id);
+
+        // Update teams: replace in team playerIds
+        const teams = {
+          a: {
+            ...wdGame.teams.a,
+            playerIds: wdGame.teams.a.playerIds.map(id =>
+              id === departingPlayerId ? bot.id : id
+            ) as [string, string],
+          },
+          b: {
+            ...wdGame.teams.b,
+            playerIds: wdGame.teams.b.playerIds.map(id =>
+              id === departingPlayerId ? bot.id : id
+            ) as [string, string],
+          },
+        };
+
+        // Update round: replace in hands, passedPlayers, currentTrick, callingPlayerId, alonePlayerId
+        let round = wdGame.round;
+        if (round) {
+          const hands = { ...round.hands };
+          if (hands[departingPlayerId]) {
+            hands[bot.id] = hands[departingPlayerId];
+            delete hands[departingPlayerId];
+          }
+
+          const passedPlayers = round.passedPlayers.map(id =>
+            id === departingPlayerId ? bot.id : id
+          );
+          const currentTrick = round.currentTrick.map(tc =>
+            tc.playerId === departingPlayerId ? { ...tc, playerId: bot.id } : tc
+          );
+          const callingPlayerId = round.callingPlayerId === departingPlayerId ? bot.id : round.callingPlayerId;
+          const alonePlayerId = round.alonePlayerId === departingPlayerId ? bot.id : round.alonePlayerId;
+
+          round = {
+            ...round,
+            hands,
+            passedPlayers,
+            currentTrick,
+            callingPlayerId,
+            alonePlayerId,
+          };
+        }
+
+        // If it was the departing player's turn, set botActionAt
+        let botActionAt = wdGame.botActionAt;
+        if (round && round.trumpPhase !== 'round_over' && wdGame.phase !== 'game_over') {
+          const currentTurnId = seats[round.currentTurnSeatIndex];
+          if (currentTurnId === bot.id) {
+            botActionAt = getWDBotTimestamp();
+          }
+        }
+
+        game = { ...wdGame, seats, teams, round, botActionAt };
       }
     }
 

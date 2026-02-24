@@ -53,10 +53,24 @@ export async function POST(request: Request) {
       const botIndex = current.players.findIndex((p) => p.isBot);
       if (botIndex === -1) return null;
 
+      const replacedBotId = current.players[botIndex].id;
       const updatedPlayers = [...current.players];
       updatedPlayers[botIndex] = newPlayer;
 
-      return { ...current, players: updatedPlayers };
+      // Update Who's Deal? team settings: replace bot ID with new player ID
+      let updatedSettings = current.settings;
+      if (current.gameId === 'whos-deal' && current.settings?.teams) {
+        const teams = current.settings.teams as { a: string[]; b: string[] };
+        updatedSettings = {
+          ...current.settings,
+          teams: {
+            a: teams.a.map((id: string) => id === replacedBotId ? playerId : id),
+            b: teams.b.map((id: string) => id === replacedBotId ? playerId : id),
+          },
+        };
+      }
+
+      return { ...current, players: updatedPlayers, settings: updatedSettings };
     });
     return updated !== null;
   };
@@ -97,9 +111,18 @@ export async function POST(request: Request) {
 
   // Trigger Pusher event
   try {
-    await getPusherServer().trigger(roomChannel(roomCode), 'player-joined', {
+    const pusher = getPusherServer();
+    await pusher.trigger(roomChannel(roomCode), 'player-joined', {
       player: newPlayer,
     });
+
+    // For Who's Deal?: also push updated teams
+    const updatedRoom = await getRoom(roomCode);
+    if (updatedRoom?.gameId === 'whos-deal' && updatedRoom.settings?.teams) {
+      await pusher.trigger(roomChannel(roomCode), 'teams-updated', {
+        teams: updatedRoom.settings.teams,
+      });
+    }
   } catch {
     // Non-fatal
   }

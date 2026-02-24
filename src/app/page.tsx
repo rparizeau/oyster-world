@@ -16,15 +16,22 @@ const GAMES: GameCardInfo[] = [
     id: 'terrible-people',
     name: 'Terrible People',
     description: 'Fill in the blanks. Be terrible.',
-    icon: '\u{1F0CF}',
+    icon: '😈',
     maxPlayers: 4,
   },
   {
     id: '4-kate',
     name: '4 Kate',
     description: 'Classic Connect 4. Drop pieces. Get four in a row.',
-    icon: '\u{1F534}',
+    icon: '🔴',
     maxPlayers: 2,
+  },
+  {
+    id: 'whos-deal',
+    name: "Who's Deal?",
+    description: 'Classic Euchre. Pick trump. Take tricks. Talk trash.',
+    icon: '🃏',
+    maxPlayers: 4,
   },
 ];
 

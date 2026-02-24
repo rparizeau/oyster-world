@@ -15,6 +15,10 @@ export interface Room {
   // Players (ordered by join time)
   players: Player[];         // Length varies by game (2 for 4 Kate, 4 for Terrible People)
 
+  // Game-specific lobby settings (optional, used by games like Who's Deal?)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  settings?: Record<string, any>;
+
   // Game state (null until game starts, polymorphic based on gameId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   game: GameState | Record<string, any> | null;

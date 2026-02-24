@@ -7,6 +7,10 @@ import { HEARTBEAT_INTERVAL_MS } from '@/lib/constants';
 import type { Room, Player, GameState, WhiteCard, BlackCard } from '@/lib/types';
 import type { FourKateState, CellColor } from '@/lib/games/4-kate';
 import FourKateGameView from '@/lib/games/4-kate/components/FourKateGameView';
+import type { Card as WDCard, Suit as WDSuit, TrickCard as WDTrickCard } from '@/lib/games/whos-deal/types';
+import WhosDealGameView from '@/lib/games/whos-deal/components/WhosDealGameView';
+import type { ClientWhosDealState } from '@/lib/games/whos-deal/components/WhosDealGameView';
+import { TRICK_RESULT_DISPLAY_MS } from '@/lib/games/whos-deal/constants';
 
 // Sanitized game state from the server (no hands, no decks)
 interface SanitizedGameState {
@@ -65,6 +69,19 @@ export default function RoomPage() {
   // Game state (4 Kate)
   const [fourKateState, setFourKateState] = useState<FourKateState | null>(null);
 
+  // Game state (Who's Deal?)
+  const [whosDealState, setWhosDealState] = useState<ClientWhosDealState | null>(null);
+  const [wdHand, setWdHand] = useState<WDCard[]>([]);
+  const [wdTrickWinner, setWdTrickWinner] = useState<{ seatIndex: number; team: 'a' | 'b' } | null>(null);
+  const [wdRoundSummary, setWdRoundSummary] = useState<{
+    callingTeam: 'a' | 'b';
+    tricksWon: { a: number; b: number };
+    pointsAwarded: { a: number; b: number };
+    scores: { a: number; b: number };
+    isGameOver: boolean;
+  } | null>(null);
+  const wdTrickTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // UI state
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected');
@@ -85,7 +102,8 @@ export default function RoomPage() {
   // Load room state
   const fetchRoom = useCallback(async () => {
     try {
-      const res = await fetch(`/api/rooms/${roomCode}`);
+      const pid = playerIdRef.current || '';
+      const res = await fetch(`/api/rooms/${roomCode}?playerId=${encodeURIComponent(pid)}`);
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || 'Room not found');
@@ -97,6 +115,11 @@ export default function RoomPage() {
       if (data.game) {
         if (data.gameId === '4-kate') {
           setFourKateState(data.game as FourKateState);
+        } else if (data.gameId === 'whos-deal') {
+          setWhosDealState(data.game as ClientWhosDealState);
+          if (data.game.round?.myHand) {
+            setWdHand(data.game.round.myHand);
+          }
         } else {
           setGameState(data.game);
           if (data.game.submissions && playerIdRef.current && data.game.submissions[playerIdRef.current]) {
@@ -190,6 +213,42 @@ export default function RoomPage() {
         if (players.yellow === data.playerId) players.yellow = data.replacementBot.id;
         return { ...prev, players };
       });
+
+      // Update Who's Deal? state: bot inherits seat
+      setWhosDealState((prev) => {
+        if (!prev) return prev;
+        const seats = prev.seats.map(id => id === data.playerId ? data.replacementBot.id : id);
+        const teams = {
+          a: {
+            ...prev.teams.a,
+            playerIds: prev.teams.a.playerIds.map(id =>
+              id === data.playerId ? data.replacementBot.id : id
+            ) as [string, string],
+          },
+          b: {
+            ...prev.teams.b,
+            playerIds: prev.teams.b.playerIds.map(id =>
+              id === data.playerId ? data.replacementBot.id : id
+            ) as [string, string],
+          },
+        };
+        let round = prev.round;
+        if (round) {
+          round = {
+            ...round,
+            passedPlayers: round.passedPlayers.map(id => id === data.playerId ? data.replacementBot.id : id),
+            currentTrick: round.currentTrick.map(tc =>
+              tc.playerId === data.playerId ? { ...tc, playerId: data.replacementBot.id } : tc
+            ),
+            callingPlayerId: round.callingPlayerId === data.playerId ? data.replacementBot.id : round.callingPlayerId,
+            alonePlayerId: round.alonePlayerId === data.playerId ? data.replacementBot.id : round.alonePlayerId,
+            handCounts: Object.fromEntries(
+              Object.entries(round.handCounts).map(([k, v]) => [k === data.playerId ? data.replacementBot.id : k, v])
+            ),
+          };
+        }
+        return { ...prev, seats, teams, round };
+      });
     });
 
     channel.bind('player-disconnected', (data: { playerId: string }) => {
@@ -219,16 +278,66 @@ export default function RoomPage() {
 
     // --- Game events ---
 
-    channel.bind('game-started', (data: { gameState: SanitizedGameState | FourKateState }) => {
+    channel.bind('game-started', (data: {
+      gameState?: SanitizedGameState | FourKateState;
+      // Who's Deal? game-started fields
+      teams?: ClientWhosDealState['teams'];
+      seats?: string[];
+      dealer?: number;
+      faceUpCard?: WDCard;
+      targetScore?: number;
+    }) => {
       setRoom((prev) => {
         if (!prev) return prev;
-        // Detect if this is a 4 Kate game
-        if (prev.gameId === '4-kate' || ('board' in data.gameState)) {
+
+        // Who's Deal? game-started
+        if (prev.gameId === 'whos-deal' && data.teams && data.seats && data.faceUpCard != null) {
+          const wdState: ClientWhosDealState = {
+            teams: data.teams,
+            seats: data.seats,
+            targetScore: data.targetScore ?? 10,
+            dealerSeatIndex: data.dealer ?? 0,
+            phase: 'playing',
+            winningTeam: null,
+            round: {
+              trumpPhase: 'round1',
+              trumpSuit: null,
+              callingPlayerId: null,
+              callingTeam: null,
+              goingAlone: false,
+              alonePlayerId: null,
+              inactivePartnerSeatIndex: null,
+              faceUpCard: data.faceUpCard,
+              dealerDiscarded: false,
+              currentTurnSeatIndex: ((data.dealer ?? 0) + 1) % 4,
+              passedPlayers: [],
+              currentTrick: [],
+              trickLeadSeatIndex: 0,
+              tricksWon: { a: 0, b: 0 },
+              tricksPlayed: 0,
+              dealerPickedUp: null,
+              myHand: [],
+              handCounts: Object.fromEntries(data.seats.map(id => [id, 5])),
+            },
+          };
+          setWhosDealState(wdState);
+          setGameState(null);
+          setFourKateState(null);
+          setWdRoundSummary(null);
+          setWdTrickWinner(null);
+          return { ...prev, status: 'playing' };
+        }
+
+        // 4 Kate game-started
+        if (prev.gameId === '4-kate' || (data.gameState && 'board' in data.gameState)) {
           setFourKateState(data.gameState as FourKateState);
           setGameState(null);
-        } else {
+          setWhosDealState(null);
+        } else if (data.gameState) {
+          // Terrible People
           setGameState(data.gameState as SanitizedGameState);
           setFourKateState(null);
+          setWhosDealState(null);
         }
         return { ...prev, status: 'playing' };
       });
@@ -307,7 +416,7 @@ export default function RoomPage() {
     });
 
     channel.bind('game-over', (data: {
-      finalScores?: Record<string, number>;
+      finalScores?: Record<string, number> | { a: number; b: number };
       winnerId?: string;
       winnerName?: string;
       // 4 Kate fields
@@ -315,6 +424,8 @@ export default function RoomPage() {
       winningCells?: [number, number][] | null;
       finalBoard?: CellColor[][];
       isDraw?: boolean;
+      // Who's Deal? fields
+      winningTeam?: 'a' | 'b';
     }) => {
       // Check if this is a 4 Kate game-over
       if ('finalBoard' in data) {
@@ -329,11 +440,310 @@ export default function RoomPage() {
             isDraw: data.isDraw ?? false,
           };
         });
+      } else if ('winningTeam' in data && data.winningTeam) {
+        // Who's Deal? game-over
+        const scores = data.finalScores as { a: number; b: number } | undefined;
+        setWhosDealState((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            phase: 'game_over' as const,
+            winningTeam: data.winningTeam!,
+            teams: scores ? {
+              a: { ...prev.teams.a, score: scores.a },
+              b: { ...prev.teams.b, score: scores.b },
+            } : prev.teams,
+          };
+        });
       } else {
         setGameOver(data as { finalScores: Record<string, number>; winnerId: string; winnerName: string });
         setGameState((prev) => prev ? { ...prev, phase: 'game_over' } : prev);
       }
       setPhaseKey((k) => k + 1);
+    });
+
+    // Who's Deal? lobby events
+    channel.bind('teams-updated', (data: { teams: { a: string[]; b: string[] } }) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          settings: { ...prev.settings, teams: data.teams },
+        };
+      });
+    });
+
+    channel.bind('settings-updated', (data: { targetScore: number }) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          settings: { ...prev.settings, targetScore: data.targetScore },
+        };
+      });
+    });
+
+    // --- Who's Deal? game events ---
+
+    channel.bind('trump-action', (data: { seatIndex: number; action: string; suit?: WDSuit; goAlone?: boolean }) => {
+      setWhosDealState((prev) => {
+        if (!prev?.round) return prev;
+        const round = prev.round;
+
+        if (data.action === 'pass') {
+          const passPlayerId = prev.seats[data.seatIndex];
+          const newPassedPlayers = round.passedPlayers.includes(passPlayerId)
+            ? round.passedPlayers
+            : [...round.passedPlayers, passPlayerId];
+
+          // All 4 passed in round1 → go to round2
+          if (round.trumpPhase === 'round1' && newPassedPlayers.length >= 4) {
+            return {
+              ...prev,
+              round: {
+                ...round,
+                trumpPhase: 'round2' as const,
+                passedPlayers: [],
+                currentTurnSeatIndex: (prev.dealerSeatIndex + 1) % 4,
+              },
+            };
+          }
+
+          // Normal pass: advance turn
+          return {
+            ...prev,
+            round: {
+              ...round,
+              passedPlayers: newPassedPlayers,
+              currentTurnSeatIndex: (round.currentTurnSeatIndex + 1) % 4,
+            },
+          };
+        }
+
+        // 'order-up' or 'call' handled by trump-confirmed
+        return prev;
+      });
+    });
+
+    channel.bind('trump-confirmed', (data: {
+      trumpSuit: WDSuit;
+      callingPlayer: string;
+      callingTeam: 'a' | 'b';
+      goAlone?: boolean;
+    }) => {
+      setWhosDealState((prev) => {
+        if (!prev?.round) return prev;
+        const round = prev.round;
+        const callerSeatIndex = prev.seats.indexOf(data.callingPlayer);
+        const goAlone = !!data.goAlone;
+        const partnerSeatIndex = goAlone ? (callerSeatIndex + 2) % 4 : null;
+
+        if (round.trumpPhase === 'round1') {
+          // Round 1 call → dealer_discard
+          return {
+            ...prev,
+            round: {
+              ...round,
+              trumpPhase: 'dealer_discard' as const,
+              trumpSuit: data.trumpSuit,
+              callingPlayerId: data.callingPlayer,
+              callingTeam: data.callingTeam,
+              goingAlone: goAlone,
+              alonePlayerId: goAlone ? data.callingPlayer : null,
+              inactivePartnerSeatIndex: partnerSeatIndex,
+              currentTurnSeatIndex: prev.dealerSeatIndex,
+              dealerPickedUp: round.faceUpCard,
+            },
+          };
+        }
+
+        // Round 2 call → playing (trick-started will set lead)
+        return {
+          ...prev,
+          round: {
+            ...round,
+            trumpPhase: 'playing' as const,
+            trumpSuit: data.trumpSuit,
+            callingPlayerId: data.callingPlayer,
+            callingTeam: data.callingTeam,
+            goingAlone: goAlone,
+            alonePlayerId: goAlone ? data.callingPlayer : null,
+            inactivePartnerSeatIndex: partnerSeatIndex,
+            currentTrick: [],
+            tricksWon: { a: 0, b: 0 },
+            tricksPlayed: 0,
+          },
+        };
+      });
+    });
+
+    channel.bind('dealer-discarded', (data: { seatIndex: number }) => {
+      setWhosDealState((prev) => {
+        if (!prev?.round) return prev;
+        return {
+          ...prev,
+          round: {
+            ...prev.round,
+            trumpPhase: 'playing' as const,
+            dealerDiscarded: true,
+            dealerPickedUp: null,
+            currentTrick: [],
+            tricksWon: { a: 0, b: 0 },
+            tricksPlayed: 0,
+          },
+        };
+      });
+    });
+
+    channel.bind('trick-started', (data: { leadSeatIndex: number }) => {
+      // Clear trick winner display
+      setWdTrickWinner(null);
+      setWhosDealState((prev) => {
+        if (!prev?.round) return prev;
+        return {
+          ...prev,
+          round: {
+            ...prev.round,
+            currentTrick: [],
+            trickLeadSeatIndex: data.leadSeatIndex,
+            currentTurnSeatIndex: data.leadSeatIndex,
+          },
+        };
+      });
+    });
+
+    channel.bind('card-played', (data: { seatIndex: number; card: WDCard }) => {
+      setWhosDealState((prev) => {
+        if (!prev?.round) return prev;
+        const round = prev.round;
+        const playerId = prev.seats[data.seatIndex];
+
+        // Add card to trick
+        const newTrick: WDTrickCard[] = [...round.currentTrick, {
+          playerId,
+          seatIndex: data.seatIndex,
+          card: data.card,
+        }];
+
+        // Update hand counts
+        const newHandCounts = { ...round.handCounts };
+        if (newHandCounts[playerId] != null) {
+          newHandCounts[playerId] = Math.max(0, newHandCounts[playerId] - 1);
+        }
+
+        // If this is our card, remove from hand
+        let newMyHand = round.myHand;
+        if (playerId === playerIdRef.current) {
+          newMyHand = round.myHand.filter(c => c.id !== data.card.id);
+        }
+
+        // Advance turn (simple: next seat, but might skip inactive partner)
+        let nextSeat = (data.seatIndex + 1) % 4;
+        if (round.goingAlone && nextSeat === round.inactivePartnerSeatIndex) {
+          nextSeat = (nextSeat + 1) % 4;
+        }
+
+        return {
+          ...prev,
+          round: {
+            ...round,
+            currentTrick: newTrick,
+            currentTurnSeatIndex: nextSeat,
+            myHand: newMyHand,
+            handCounts: newHandCounts,
+          },
+        };
+      });
+    });
+
+    channel.bind('trick-won', (data: {
+      winningSeatIndex: number;
+      winningTeam: 'a' | 'b';
+      tricksWon: { a: number; b: number };
+    }) => {
+      // Show trick winner for TRICK_RESULT_DISPLAY_MS
+      setWdTrickWinner({ seatIndex: data.winningSeatIndex, team: data.winningTeam });
+
+      setWhosDealState((prev) => {
+        if (!prev?.round) return prev;
+        return {
+          ...prev,
+          round: {
+            ...prev.round,
+            tricksWon: data.tricksWon,
+            tricksPlayed: prev.round.tricksPlayed + 1,
+            trickLeadSeatIndex: data.winningSeatIndex,
+          },
+        };
+      });
+
+      // Auto-clear trick winner after delay
+      if (wdTrickTimerRef.current) clearTimeout(wdTrickTimerRef.current);
+      wdTrickTimerRef.current = setTimeout(() => {
+        setWdTrickWinner(null);
+      }, TRICK_RESULT_DISPLAY_MS);
+    });
+
+    channel.bind('round-over', (data: {
+      callingTeam: 'a' | 'b';
+      tricksWon: { a: number; b: number };
+      pointsAwarded: { a: number; b: number };
+      scores: { a: number; b: number };
+      isGameOver: boolean;
+    }) => {
+      setWdRoundSummary(data);
+      setWhosDealState((prev) => {
+        if (!prev?.round) return prev;
+        return {
+          ...prev,
+          teams: {
+            a: { ...prev.teams.a, score: data.scores.a },
+            b: { ...prev.teams.b, score: data.scores.b },
+          },
+          round: {
+            ...prev.round,
+            trumpPhase: 'round_over' as const,
+            tricksWon: data.tricksWon,
+            currentTrick: [],
+          },
+          phase: data.isGameOver ? 'game_over' as const : prev.phase,
+        };
+      });
+    });
+
+    channel.bind('new-round', (data: {
+      dealerSeatIndex: number;
+      faceUpCard: WDCard;
+    }) => {
+      setWdRoundSummary(null);
+      setWdTrickWinner(null);
+      setWhosDealState((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          dealerSeatIndex: data.dealerSeatIndex,
+          round: {
+            trumpPhase: 'round1' as const,
+            trumpSuit: null,
+            callingPlayerId: null,
+            callingTeam: null,
+            goingAlone: false,
+            alonePlayerId: null,
+            inactivePartnerSeatIndex: null,
+            faceUpCard: data.faceUpCard,
+            dealerDiscarded: false,
+            currentTurnSeatIndex: (data.dealerSeatIndex + 1) % 4,
+            passedPlayers: [],
+            currentTrick: [],
+            trickLeadSeatIndex: 0,
+            tricksWon: { a: 0, b: 0 },
+            tricksPlayed: 0,
+            dealerPickedUp: null,
+            myHand: [],
+            handCounts: Object.fromEntries(prev.seats.map(id => [id, 5])),
+          },
+        };
+      });
     });
 
     // 4 Kate: move-made
@@ -357,8 +767,21 @@ export default function RoomPage() {
     });
 
     // --- Private channel: hand updates ---
-    pChannel.bind('hand-updated', (data: { hand: WhiteCard[] }) => {
-      setHand(data.hand);
+    pChannel.bind('hand-updated', (data: { hand: WhiteCard[] | WDCard[] }) => {
+      // Detect if this is a Who's Deal? hand (cards have suit/rank) or TP hand (cards have text)
+      if (data.hand.length > 0 && 'suit' in data.hand[0]) {
+        setWdHand(data.hand as WDCard[]);
+        // Also update whosDealState.round.myHand
+        setWhosDealState((prev) => {
+          if (!prev?.round) return prev;
+          return {
+            ...prev,
+            round: { ...prev.round, myHand: data.hand as WDCard[] },
+          };
+        });
+      } else {
+        setHand(data.hand as WhiteCard[]);
+      }
     });
 
     return () => {
@@ -423,6 +846,50 @@ export default function RoomPage() {
       setError('Failed to start game');
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function handleSwapTeams(playerIdA: string, playerIdB: string) {
+    if (!playerId) return;
+    try {
+      const res = await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          type: 'swap-teams',
+          payload: { playerIdA, playerIdB },
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        addToast(data.error || 'Failed to swap teams', 'warning');
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  async function handleSetTargetScore(targetScore: number) {
+    if (!playerId) return;
+    try {
+      const res = await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          type: 'set-target-score',
+          payload: { targetScore },
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        addToast(data.error || 'Failed to update score', 'warning');
+      }
+    } catch {
+      // Non-fatal
     }
   }
 
@@ -512,6 +979,121 @@ export default function RoomPage() {
     }
   }
 
+  // --- Who's Deal? Actions ---
+
+  async function handleWDCallTrump(payload: { pickUp?: boolean; suit?: WDSuit; goAlone?: boolean }) {
+    if (!playerId) return;
+    try {
+      const actionId = `${playerId}-${Date.now()}`;
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode, playerId, actionId,
+          type: 'call-trump',
+          payload,
+        }),
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  async function handleWDPassTrump() {
+    if (!playerId) return;
+    try {
+      const actionId = `${playerId}-${Date.now()}`;
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode, playerId, actionId,
+          type: 'pass-trump',
+        }),
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  async function handleWDDiscard(cardId: string) {
+    if (!playerId) return;
+    // Optimistically remove card from hand
+    setWdHand(prev => prev.filter(c => c.id !== cardId));
+    setWhosDealState(prev => {
+      if (!prev?.round) return prev;
+      return {
+        ...prev,
+        round: {
+          ...prev.round,
+          myHand: prev.round.myHand.filter(c => c.id !== cardId),
+        },
+      };
+    });
+    try {
+      const actionId = `${playerId}-${Date.now()}`;
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode, playerId, actionId,
+          type: 'discard',
+          payload: { cardId },
+        }),
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  async function handleWDPlayCard(cardId: string) {
+    if (!playerId) return;
+    // Optimistically remove card from hand
+    setWdHand(prev => prev.filter(c => c.id !== cardId));
+    setWhosDealState(prev => {
+      if (!prev?.round) return prev;
+      return {
+        ...prev,
+        round: {
+          ...prev.round,
+          myHand: prev.round.myHand.filter(c => c.id !== cardId),
+        },
+      };
+    });
+    try {
+      const actionId = `${playerId}-${Date.now()}`;
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode, playerId, actionId,
+          type: 'play-card',
+          payload: { cardId },
+        }),
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  async function handleWDPlayAgain() {
+    if (!playerId) return;
+    try {
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode, playerId,
+          type: 'play-again',
+        }),
+      });
+      setWdRoundSummary(null);
+      setWdTrickWinner(null);
+    } catch {
+      // Non-fatal
+    }
+  }
+
   function handleCopy(type: 'code' | 'link') {
     const text = type === 'code'
       ? roomCode
@@ -584,6 +1166,31 @@ export default function RoomPage() {
 
   const isOwner = playerId === room.ownerId;
 
+  // Who's Deal? game view
+  if (room.status === 'playing' && whosDealState && room.gameId === 'whos-deal') {
+    return (
+      <>
+        <ToastContainer toasts={toasts} />
+        <ConnectionBanner status={connectionStatus} />
+        <WhosDealGameView
+          room={room}
+          gameState={whosDealState}
+          playerId={playerId}
+          isOwner={isOwner}
+          leaving={leaving}
+          trickWinner={wdTrickWinner}
+          roundSummary={wdRoundSummary}
+          onCallTrump={handleWDCallTrump}
+          onPassTrump={handleWDPassTrump}
+          onDiscard={handleWDDiscard}
+          onPlayCard={handleWDPlayCard}
+          onPlayAgain={handleWDPlayAgain}
+          onLeave={handleLeave}
+        />
+      </>
+    );
+  }
+
   // 4 Kate game view
   if (room.status === 'playing' && fourKateState && room.gameId === '4-kate') {
     return (
@@ -642,6 +1249,7 @@ export default function RoomPage() {
       <ConnectionBanner status={connectionStatus} />
       <LobbyView
         room={room}
+        playerId={playerId}
         isOwner={isOwner}
         starting={starting}
         leaving={leaving}
@@ -649,6 +1257,8 @@ export default function RoomPage() {
         onCopy={handleCopy}
         onStartGame={handleStartGame}
         onLeave={handleLeave}
+        onSwapTeams={handleSwapTeams}
+        onSetTargetScore={handleSetTargetScore}
       />
     </>
   );
@@ -712,6 +1322,7 @@ function ConnectionBanner({ status }: { status: 'connected' | 'reconnecting' | '
 // ====================
 function LobbyView({
   room,
+  playerId,
   isOwner,
   starting,
   leaving,
@@ -719,8 +1330,11 @@ function LobbyView({
   onCopy,
   onStartGame,
   onLeave,
+  onSwapTeams,
+  onSetTargetScore,
 }: {
   room: Room;
+  playerId: string | null;
   isOwner: boolean;
   starting: boolean;
   leaving: boolean;
@@ -728,16 +1342,21 @@ function LobbyView({
   onCopy: (type: 'code' | 'link') => void;
   onStartGame: () => void;
   onLeave: () => void;
+  onSwapTeams: (playerIdA: string, playerIdB: string) => void;
+  onSetTargetScore: (targetScore: number) => void;
 }) {
   const humanCount = room.players.filter((p) => !p.isBot).length;
+  const isWhosDeal = room.gameId === 'whos-deal';
+  const teams = room.settings?.teams as { a: string[]; b: string[] } | undefined;
+  const targetScore = (room.settings?.targetScore as number) || 10;
 
   return (
     <div className="flex min-h-dvh flex-col items-center gap-8 p-6 pt-12 animate-fade-in">
       {/* Game indicator */}
       {room.gameId && (
         <div className="flex items-center gap-2 rounded-xl bg-surface-light border border-border px-4 py-2">
-          <span className="text-2xl">{room.gameId === 'terrible-people' ? '\u{1F0CF}' : room.gameId === '4-kate' ? '\u{1F534}' : ''}</span>
-          <span className="text-sm font-semibold text-foreground">{room.gameId === 'terrible-people' ? 'Terrible People' : room.gameId === '4-kate' ? '4 Kate' : room.gameId}</span>
+          <span className="text-2xl">{room.gameId === 'terrible-people' ? '😈' : room.gameId === '4-kate' ? '🔴' : room.gameId === 'whos-deal' ? '🃏' : ''}</span>
+          <span className="text-sm font-semibold text-foreground">{room.gameId === 'terrible-people' ? 'Terrible People' : room.gameId === '4-kate' ? '4 Kate' : room.gameId === 'whos-deal' ? "Who's Deal?" : room.gameId}</span>
         </div>
       )}
 
@@ -773,57 +1392,54 @@ function LobbyView({
         </button>
       </div>
 
-      {/* Players */}
-      <div className="w-full max-w-sm">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs text-muted uppercase tracking-[0.15em] font-semibold">Players</h2>
-          <span className="text-xs text-muted">{humanCount}/{room.players.length} humans</span>
+      {/* Who's Deal? Team Assignment */}
+      {isWhosDeal && teams ? (
+        <WhosDealTeamAssignment
+          room={room}
+          teams={teams}
+          playerId={playerId}
+          isOwner={isOwner}
+          onSwapTeams={onSwapTeams}
+        />
+      ) : (
+        /* Standard player list for other games */
+        <div className="w-full max-w-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs text-muted uppercase tracking-[0.15em] font-semibold">Players</h2>
+            <span className="text-xs text-muted">{humanCount}/{room.players.length} humans</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {room.players.map((player, i) => (
+              <PlayerCard key={player.id} player={player} isOwnerPlayer={player.id === room.ownerId} index={i} />
+            ))}
+          </div>
         </div>
-        <div className="flex flex-col gap-2">
-          {room.players.map((player, i) => (
-            <div
-              key={player.id}
-              className={`flex items-center justify-between rounded-xl px-4 py-3.5 transition-all animate-fade-in ${
-                player.isBot
-                  ? 'bg-surface border border-dashed border-border'
-                  : 'bg-surface-light border border-border-light'
-              } ${!player.isConnected && !player.isBot ? 'opacity-40' : ''}`}
-              style={{ animationDelay: `${i * 50}ms` }}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                {/* Avatar / Bot icon */}
-                {player.isBot ? (
-                  <div className="w-9 h-9 rounded-full bg-surface-lighter flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                ) : (
-                  <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0 text-accent font-bold text-sm">
-                    {player.name.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <span className={`font-semibold text-sm truncate block max-w-[140px] ${
-                    player.isBot ? 'text-muted' : 'text-foreground'
-                  }`}>
-                    {player.name}
-                  </span>
-                  {player.id === room.ownerId && (
-                    <span className="text-[10px] text-accent font-semibold uppercase tracking-wider">Owner</span>
-                  )}
-                  {!player.isConnected && !player.isBot && (
-                    <span className="text-[10px] text-danger font-semibold uppercase tracking-wider">Disconnected</span>
-                  )}
-                </div>
-              </div>
-              {player.isBot && (
-                <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">Bot</span>
-              )}
-            </div>
-          ))}
+      )}
+
+      {/* Who's Deal? Target Score Selector */}
+      {isWhosDeal && (
+        <div className="w-full max-w-sm">
+          <h2 className="text-xs text-muted uppercase tracking-[0.15em] font-semibold mb-3">Points to Win</h2>
+          <div className="flex gap-2">
+            {[5, 7, 10, 11].map((score) => (
+              <button
+                key={score}
+                onClick={() => isOwner && onSetTargetScore(score)}
+                disabled={!isOwner}
+                className={`flex-1 rounded-xl py-3 text-lg font-bold transition-all ${
+                  targetScore === score
+                    ? 'bg-accent text-white shadow-[0_0_12px_rgba(139,92,246,0.3)]'
+                    : isOwner
+                      ? 'bg-surface border border-border text-foreground hover:border-border-light hover:bg-surface-light'
+                      : 'bg-surface border border-border text-muted cursor-default'
+                }`}
+              >
+                {score}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Actions */}
       <div className="flex flex-col gap-3 w-full max-w-sm">
@@ -858,6 +1474,208 @@ function LobbyView({
       <p className="text-sm text-muted text-center">
         Share the world code to invite friends
       </p>
+    </div>
+  );
+}
+
+// ====================
+// PLAYER CARD (reusable)
+// ====================
+function PlayerCard({ player, isOwnerPlayer, index }: { player: Player; isOwnerPlayer: boolean; index: number }) {
+  return (
+    <div
+      className={`flex items-center justify-between rounded-xl px-4 py-3.5 transition-all animate-fade-in ${
+        player.isBot
+          ? 'bg-surface border border-dashed border-border'
+          : 'bg-surface-light border border-border-light'
+      } ${!player.isConnected && !player.isBot ? 'opacity-40' : ''}`}
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        {player.isBot ? (
+          <div className="w-9 h-9 rounded-full bg-surface-lighter flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </div>
+        ) : (
+          <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0 text-accent font-bold text-sm">
+            {player.name.charAt(0).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0">
+          <span className={`font-semibold text-sm truncate block max-w-[140px] ${
+            player.isBot ? 'text-muted' : 'text-foreground'
+          }`}>
+            {player.name}
+          </span>
+          {isOwnerPlayer && (
+            <span className="text-[10px] text-accent font-semibold uppercase tracking-wider">Owner</span>
+          )}
+          {!player.isConnected && !player.isBot && (
+            <span className="text-[10px] text-danger font-semibold uppercase tracking-wider">Disconnected</span>
+          )}
+        </div>
+      </div>
+      {player.isBot && (
+        <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">Bot</span>
+      )}
+    </div>
+  );
+}
+
+// ====================
+// WHO'S DEAL? TEAM ASSIGNMENT
+// ====================
+function WhosDealTeamAssignment({
+  room,
+  teams,
+  playerId,
+  isOwner,
+  onSwapTeams,
+}: {
+  room: Room;
+  teams: { a: string[]; b: string[] };
+  playerId: string | null;
+  isOwner: boolean;
+  onSwapTeams: (playerIdA: string, playerIdB: string) => void;
+}) {
+  const [selectedA, setSelectedA] = useState<string | null>(null);
+  const [selectedB, setSelectedB] = useState<string | null>(null);
+
+  const teamAPlayers = teams.a.map((id) => room.players.find((p) => p.id === id)).filter(Boolean) as Player[];
+  const teamBPlayers = teams.b.map((id) => room.players.find((p) => p.id === id)).filter(Boolean) as Player[];
+
+  const humanCount = room.players.filter((p) => !p.isBot).length;
+
+  function handleSelectA(id: string) {
+    if (!isOwner) return;
+    if (selectedA === id) {
+      setSelectedA(null);
+      return;
+    }
+    setSelectedA(id);
+    if (selectedB) {
+      onSwapTeams(id, selectedB);
+      setSelectedA(null);
+      setSelectedB(null);
+    }
+  }
+
+  function handleSelectB(id: string) {
+    if (!isOwner) return;
+    if (selectedB === id) {
+      setSelectedB(null);
+      return;
+    }
+    setSelectedB(id);
+    if (selectedA) {
+      onSwapTeams(selectedA, id);
+      setSelectedA(null);
+      setSelectedB(null);
+    }
+  }
+
+  return (
+    <div className="w-full max-w-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xs text-muted uppercase tracking-[0.15em] font-semibold">Teams</h2>
+        <span className="text-xs text-muted">{humanCount}/{room.players.length} humans</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {/* Team A */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3 h-3 rounded-full bg-blue-500" />
+            <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Team A</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {teamAPlayers.map((player) => (
+              <button
+                key={player.id}
+                onClick={() => handleSelectA(player.id)}
+                disabled={!isOwner}
+                className={`flex items-center gap-2.5 rounded-xl px-3 py-3 transition-all text-left w-full ${
+                  selectedA === player.id
+                    ? 'bg-blue-500/20 border-2 border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                    : player.isBot
+                      ? 'bg-surface border border-dashed border-blue-500/30'
+                      : 'bg-surface-light border border-blue-500/30'
+                } ${isOwner ? 'cursor-pointer hover:border-blue-500/60' : 'cursor-default'} ${!player.isConnected && !player.isBot ? 'opacity-40' : ''}`}
+              >
+                {player.isBot ? (
+                  <div className="w-8 h-8 rounded-full bg-surface-lighter flex items-center justify-center flex-shrink-0">
+                    <svg className="w-3.5 h-3.5 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 text-blue-400 font-bold text-xs">
+                    {player.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <span className={`font-semibold text-sm truncate block ${player.isBot ? 'text-muted' : 'text-foreground'}`}>
+                    {player.name}
+                  </span>
+                  {player.isBot && <span className="text-[9px] text-muted uppercase tracking-wider">Bot</span>}
+                  {player.id === room.ownerId && <span className="text-[9px] text-accent uppercase tracking-wider font-semibold">Owner</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Team B */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3 h-3 rounded-full bg-orange-500" />
+            <span className="text-xs font-bold text-orange-400 uppercase tracking-wider">Team B</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {teamBPlayers.map((player) => (
+              <button
+                key={player.id}
+                onClick={() => handleSelectB(player.id)}
+                disabled={!isOwner}
+                className={`flex items-center gap-2.5 rounded-xl px-3 py-3 transition-all text-left w-full ${
+                  selectedB === player.id
+                    ? 'bg-orange-500/20 border-2 border-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.2)]'
+                    : player.isBot
+                      ? 'bg-surface border border-dashed border-orange-500/30'
+                      : 'bg-surface-light border border-orange-500/30'
+                } ${isOwner ? 'cursor-pointer hover:border-orange-500/60' : 'cursor-default'} ${!player.isConnected && !player.isBot ? 'opacity-40' : ''}`}
+              >
+                {player.isBot ? (
+                  <div className="w-8 h-8 rounded-full bg-surface-lighter flex items-center justify-center flex-shrink-0">
+                    <svg className="w-3.5 h-3.5 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0 text-orange-400 font-bold text-xs">
+                    {player.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <span className={`font-semibold text-sm truncate block ${player.isBot ? 'text-muted' : 'text-foreground'}`}>
+                    {player.name}
+                  </span>
+                  {player.isBot && <span className="text-[9px] text-muted uppercase tracking-wider">Bot</span>}
+                  {player.id === room.ownerId && <span className="text-[9px] text-accent uppercase tracking-wider font-semibold">Owner</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {isOwner && (
+        <p className="text-xs text-muted text-center mt-3">
+          Tap one player from each team to swap them
+        </p>
+      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ export const GAME_REGISTRY: GameConfig[] = [
     description: 'Fill in the blanks. Be terrible.',
     minPlayers: 4,
     maxPlayers: 4,
-    icon: '\u{1F0CF}',
+    icon: '😈',
   },
   {
     id: '4-kate',
@@ -22,7 +22,15 @@ export const GAME_REGISTRY: GameConfig[] = [
     description: 'Classic Connect 4. Drop pieces. Get four in a row.',
     minPlayers: 2,
     maxPlayers: 2,
-    icon: '\u{1F534}',
+    icon: '🔴',
+  },
+  {
+    id: 'whos-deal',
+    name: "Who's Deal?",
+    description: 'Classic Euchre. Pick trump. Take tricks. Talk trash.',
+    minPlayers: 4,
+    maxPlayers: 4,
+    icon: '🃏',
   },
 ];
 
