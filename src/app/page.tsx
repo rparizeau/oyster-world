@@ -14,13 +14,6 @@ interface GameCardInfo {
 
 const GAMES: GameCardInfo[] = [
   {
-    id: 'terrible-people',
-    name: 'Terrible People',
-    description: 'Fill in the blanks. Be terrible.',
-    icon: '😈',
-    maxPlayers: 4,
-  },
-  {
     id: '4-kate',
     name: 'Take 4',
     description: 'Classic Connect 4. Drop pieces. Get four in a row.',
@@ -32,6 +25,13 @@ const GAMES: GameCardInfo[] = [
     name: "Who's Deal?",
     description: 'Classic Euchre. Pick trump. Take tricks. Talk trash.',
     icon: '🃏',
+    maxPlayers: 4,
+  },
+  {
+    id: 'terrible-people',
+    name: 'Terrible People',
+    description: 'Fill in the blanks. Be terrible.',
+    icon: '😈',
     maxPlayers: 4,
   },
 ];

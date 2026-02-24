@@ -9,14 +9,6 @@ export interface GameConfig {
 
 export const GAME_REGISTRY: GameConfig[] = [
   {
-    id: 'terrible-people',
-    name: 'Terrible People',
-    description: 'Fill in the blanks. Be terrible.',
-    minPlayers: 4,
-    maxPlayers: 4,
-    icon: '😈',
-  },
-  {
     id: '4-kate',
     name: 'Take 4',
     description: 'Classic Connect 4. Drop pieces. Get four in a row.',
@@ -31,6 +23,14 @@ export const GAME_REGISTRY: GameConfig[] = [
     minPlayers: 4,
     maxPlayers: 4,
     icon: '🃏',
+  },
+  {
+    id: 'terrible-people',
+    name: 'Terrible People',
+    description: 'Fill in the blanks. Be terrible.',
+    minPlayers: 4,
+    maxPlayers: 4,
+    icon: '😈',
   },
 ];
 
