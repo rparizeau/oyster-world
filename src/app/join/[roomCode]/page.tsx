@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import PearlGlobe from '@/components/PearlGlobe';
 
 interface GameInfo {
   name: string;
@@ -9,8 +10,9 @@ interface GameInfo {
 }
 
 const GAME_INFO: Record<string, GameInfo> = {
-  'terrible-people': { name: 'Terrible People', icon: '\u{1F0CF}' },
-  '4-kate': { name: '4 Kate', icon: '\u{1F534}' },
+  'terrible-people': { name: 'Terrible People', icon: '😈' },
+  '4-kate': { name: 'Take 4', icon: '❤️' },
+  'whos-deal': { name: "Who's Deal?", icon: '🃏' },
 };
 
 export default function JoinPage() {
@@ -23,7 +25,6 @@ export default function JoinPage() {
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState<string | null>(null);
 
-  // Fetch room info to show which game is being played
   useEffect(() => {
     fetch(`/api/rooms/${roomCode}`)
       .then((res) => res.ok ? res.json() : null)
@@ -50,7 +51,7 @@ export default function JoinPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Failed to join world');
+        setError(data.error || 'Failed to join game');
         return;
       }
       sessionStorage.setItem('playerId', data.playerId);
@@ -72,68 +73,84 @@ export default function JoinPage() {
   const gameInfo = gameId ? GAME_INFO[gameId] : null;
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-8 p-6 animate-fade-in">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight">Join World</h1>
-        <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-surface-light px-4 py-2">
-          <span className="text-muted text-sm">World</span>
-          <span className="font-mono font-bold text-xl tracking-[0.2em]">{roomCode}</span>
+    <div className="bg-depth-wading flex min-h-dvh flex-col items-center justify-center p-6 animate-fade-in">
+      <div className="flex flex-col items-center text-center">
+        <div className="mb-4">
+          <PearlGlobe size={64} animate="float" />
         </div>
+        <h1 className="font-display text-[1.7em] text-pearl mb-1">Join a Game</h1>
+
+        {/* Game code display */}
+        <div className="mt-3 mb-1">
+          <div className="text-[0.62em] uppercase tracking-[3px] font-bold" style={{ color: 'rgba(240,194,127,.35)' }}>
+            Game Code
+          </div>
+          <div className="font-display text-[2.2em] text-cream tracking-[6px]">
+            {roomCode}
+          </div>
+        </div>
+
         {gameInfo && (
-          <div className="mt-2 flex items-center justify-center gap-1.5">
+          <div className="flex items-center justify-center gap-1.5 mb-4">
             <span className="text-lg">{gameInfo.icon}</span>
-            <span className="text-sm text-muted-light font-medium">{gameInfo.name}</span>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-4 w-full max-w-xs" onKeyDown={handleKeyDown}>
-        <input
-          type="text"
-          placeholder="Your name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={20}
-          className="w-full rounded-xl border-2 border-border bg-surface px-4 py-3.5 text-lg text-foreground placeholder:text-muted focus:outline-none focus:border-accent transition-colors"
-          autoFocus
-        />
-
-        {error && (
-          <div className="animate-fade-in rounded-lg bg-danger/10 border border-danger/30 px-4 py-2.5 text-center">
-            <p className="text-danger text-sm font-medium">{error}</p>
-            <button
-              onClick={() => router.push('/')}
-              className="mt-1.5 text-xs text-muted hover:text-muted-light underline transition-colors"
-            >
-              Return Home
-            </button>
+            <span className="text-sm font-medium" style={{ color: 'var(--shallow-water)' }}>{gameInfo.name}</span>
           </div>
         )}
 
-        <button
-          onClick={handleJoin}
-          disabled={loading}
-          className="w-full rounded-xl bg-accent px-6 py-3.5 text-lg font-bold text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-        >
-          {loading ? (
-            <>
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Joining...
-            </>
-          ) : (
-            'Join World'
+        <p className="text-sm mb-6" style={{ color: 'rgba(245,230,202,.45)' }}>
+          Enter your name to dive in
+        </p>
+
+        <div className="flex flex-col gap-3 w-full max-w-[260px]" onKeyDown={handleKeyDown}>
+          <input
+            type="text"
+            placeholder="Your name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={20}
+            className="input-ocean"
+            autoFocus
+          />
+
+          {error && (
+            <div className="animate-fade-in rounded-lg px-4 py-2.5 text-center" style={{ background: 'rgba(201,101,138,.1)', border: '1px solid rgba(201,101,138,.3)' }}>
+              <p className="text-star text-sm font-medium">{error}</p>
+              <button
+                onClick={() => router.push('/')}
+                className="mt-1.5 text-xs underline transition-colors"
+                style={{ color: 'var(--muted)' }}
+              >
+                Return Home
+              </button>
+            </div>
           )}
-        </button>
 
-        <button
-          onClick={() => router.push('/')}
-          className="text-sm text-muted hover:text-muted-light transition-colors"
-        >
-          Back to Home
-        </button>
+          <button
+            onClick={handleJoin}
+            disabled={loading}
+            className="btn-primary flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Diving in...
+              </>
+            ) : (
+              'Dive In'
+            )}
+          </button>
+
+          <button
+            onClick={() => router.push('/')}
+            className="text-[0.8em] mt-1"
+            style={{ color: 'rgba(232,230,240,.25)', background: 'none', border: 'none' }}
+          >
+            Back to Home
+          </button>
+        </div>
       </div>
     </div>
   );

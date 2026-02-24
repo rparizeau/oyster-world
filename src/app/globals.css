@@ -1,28 +1,52 @@
 @import "tailwindcss";
 
-/* Force dark theme */
+/* === Ocean Depth Design System === */
 :root {
-  --background: #0a0a0a;
-  --foreground: #f0f0f0;
+  /* Depth gradients */
+  --depth-surface: #2a8a9e;
+  --depth-shallows: #1e6e8e;
+  --depth-mid: #1a5276;
+  --depth-deep: #0d1b3e;
+  --depth-abyss: #080c1a;
+
+  /* Brand */
+  --pearl: #f0c27f;
+  --cream: #f5e6ca;
+  --coral: #e8a87c;
+  --glass: #6bbfa3;
+  --star: #c9658a;
+  --shallow-water: #7eb8d4;
+
+  /* Neutrals */
+  --ink: #2a1f3d;
+  --drift: #8b7355;
+  --sandy: #d4c5a9;
+  --foam: #f8f4ed;
+
+  /* Mapped tokens (Tailwind compat) */
+  --background: #080c1a;
+  --foreground: #f5e6ca;
+  --accent: #f0c27f;
+  --accent-hover: #f5d08f;
+  --accent-dim: #d4a85e;
+  --success: #6bbfa3;
+  --success-dim: #5aa88e;
+  --danger: #c9658a;
+  --danger-dim: #b05577;
+  --warning: #f59e0b;
+  --muted: #8b7355;
+  --muted-light: #a89578;
+  --surface: #0d1b3e;
+  --surface-light: #1a5276;
+  --surface-lighter: #1e6e8e;
+  --border: rgba(245,230,202,.1);
+  --border-light: rgba(245,230,202,.15);
+
+  /* Game-specific (kept for backward compat) */
   --card-white: #f5f5f5;
   --card-white-text: #1a1a1a;
   --card-black: #1a1a1a;
   --card-black-text: #ffffff;
-  --accent: #8b5cf6;
-  --accent-hover: #7c3aed;
-  --accent-dim: #6d28d9;
-  --success: #22c55e;
-  --success-dim: #16a34a;
-  --danger: #ef4444;
-  --danger-dim: #dc2626;
-  --warning: #f59e0b;
-  --muted: #71717a;
-  --muted-light: #a1a1aa;
-  --surface: #18181b;
-  --surface-light: #27272a;
-  --surface-lighter: #3f3f46;
-  --border: #3f3f46;
-  --border-light: #52525b;
 }
 
 @theme inline {
@@ -47,8 +71,19 @@
   --color-surface-lighter: var(--surface-lighter);
   --color-border: var(--border);
   --color-border-light: var(--border-light);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-pearl: var(--pearl);
+  --color-cream: var(--cream);
+  --color-coral: var(--coral);
+  --color-glass: var(--glass);
+  --color-star: var(--star);
+  --color-shallow-water: var(--shallow-water);
+  --color-ink: var(--ink);
+  --color-drift: var(--drift);
+  --color-sandy: var(--sandy);
+  --color-foam: var(--foam);
+  --font-display: var(--font-fredoka);
+  --font-sub: var(--font-baloo);
+  --font-body: var(--font-quicksand);
 
   --animate-fade-in: fade-in 0.3s ease-out;
   --animate-fade-in-up: fade-in-up 0.4s ease-out;
@@ -61,8 +96,11 @@
   --animate-winner-reveal: winner-reveal 0.5s ease-out;
   --animate-bounce-in: bounce-in 0.4s ease-out;
   --animate-shimmer: shimmer 1.5s ease-in-out infinite;
+  --animate-float: float 4s ease-in-out infinite;
+  --animate-pearl-pulse: pearl-pulse 2s ease-in-out infinite;
 }
 
+/* === Animations === */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -122,15 +160,185 @@
   100% { background-position: 200% 0; }
 }
 
+/* Ocean-themed animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes pearl-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes pearl-shimmer {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.2); }
+  100% { filter: brightness(1); }
+}
+
+@keyframes bubble-rise {
+  0% { transform: translateY(100%) scale(1); opacity: 0; }
+  10% { opacity: 0.5; }
+  90% { opacity: 0.2; }
+  100% { transform: translateY(-50px) scale(0.3); opacity: 0; }
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.4); }
+}
+
+/* === Body === */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-quicksand), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar styling */
+/* === Depth Gradient Backgrounds === */
+.bg-depth-surface {
+  background: linear-gradient(180deg, #2a8a9e, #1e6e8e 40%, #1a5276 75%, #0d1b3e);
+}
+
+.bg-depth-wading {
+  background: linear-gradient(180deg, #1e6e8e, #1a5276 40%, #0d1b3e 85%, #080c1a);
+}
+
+.bg-depth-choosing {
+  background: linear-gradient(180deg, #1a5276, #0d1b3e 50%, #080c1a);
+}
+
+.bg-depth-descent {
+  background: radial-gradient(ellipse at 50% 30%, rgba(13,27,62,.6), #080c1a), #080c1a;
+}
+
+.bg-depth-deep {
+  background: #080c1a;
+}
+
+.bg-depth-surfacing {
+  background: linear-gradient(180deg, #1e6e8e, #1a5276 40%, #0d1b3e 80%, #080c1a);
+}
+
+/* === Button Tokens === */
+.btn-primary {
+  background: var(--pearl);
+  color: var(--depth-deep);
+  font-family: var(--font-quicksand), sans-serif;
+  font-weight: 700;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  font-size: 0.95em;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  text-align: center;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 2px solid rgba(245,230,202,.15);
+  color: var(--cream);
+  font-family: var(--font-quicksand), sans-serif;
+  font-weight: 700;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 0.95em;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  text-align: center;
+}
+
+.btn-secondary:hover {
+  border-color: rgba(245,230,202,.35);
+}
+
+.btn-danger {
+  background: transparent;
+  border: 1.5px solid rgba(201,101,138,.18);
+  color: var(--star);
+  font-family: var(--font-quicksand), sans-serif;
+  font-weight: 700;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  text-align: center;
+}
+
+.btn-danger:hover {
+  border-color: rgba(201,101,138,.35);
+  background: rgba(201,101,138,.05);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* === Input Tokens === */
+.input-ocean {
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 2px solid rgba(245,230,202,.1);
+  background: rgba(255,255,255,.04);
+  font-family: var(--font-quicksand), sans-serif;
+  font-size: 0.95em;
+  color: var(--cream);
+  outline: none;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.input-ocean:focus {
+  border-color: rgba(240,194,127,.3);
+  background: rgba(255,255,255,.06);
+}
+
+.input-ocean::placeholder {
+  color: rgba(232,230,240,.25);
+}
+
+.input-ocean-code {
+  text-align: center;
+  letter-spacing: 6px;
+  font-weight: 700;
+  font-size: 1.1em;
+  text-transform: uppercase;
+}
+
+/* === Bubble Effect === */
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.07), rgba(255,255,255,.01));
+  animation: bubble-rise linear infinite;
+  pointer-events: none;
+}
+
+/* === Scrollbar styling === */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -149,7 +357,7 @@ body {
   background: var(--border-light);
 }
 
-/* Card base styles */
+/* === Card base styles (game-specific — DO NOT TOUCH) === */
 .card-white {
   background: var(--card-white);
   color: var(--card-white-text);
@@ -255,7 +463,7 @@ body {
 .status-dot.reconnecting { background: var(--warning); animation: pulse-soft 1s ease-in-out infinite; }
 .status-dot.disconnected { background: var(--danger); }
 
-/* === 4 Kate (Connect 4) === */
+/* === Take 4 (Connect 4) — DO NOT TOUCH === */
 
 .c4-board {
   display: grid;
@@ -341,101 +549,3 @@ body {
 
 .c4-ghost.red { background: #ef4444; }
 .c4-ghost.yellow { background: #facc15; }
-
-/* === Who's Deal? (Euchre) === */
-
-.wd-card {
-  width: 52px;
-  height: 74px;
-  border-radius: 6px;
-  font-weight: 700;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.wd-card-face {
-  background: #fff;
-  color: #1a1a1a;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.wd-card-face.red { color: #dc2626; }
-.wd-card-face.black { color: #1a1a1a; }
-
-.wd-card-back {
-  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 50%, #1e40af 100%);
-  border: 2px solid #2563eb;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  position: relative;
-  overflow: hidden;
-}
-
-.wd-card-back::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-}
-
-.wd-card-hand {
-  width: 60px;
-  height: 84px;
-  border-radius: 8px;
-  cursor: pointer;
-  min-width: 60px;
-  min-height: 84px;
-}
-
-.wd-card-hand:hover:not(.dimmed) {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.wd-card-hand.selected {
-  transform: translateY(-8px);
-  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
-  border-color: var(--accent);
-  border-width: 2px;
-}
-
-.wd-card-hand.dimmed {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.wd-card-trick {
-  width: 44px;
-  height: 62px;
-  border-radius: 5px;
-  font-size: 0.75rem;
-}
-
-.wd-card-trick.winning {
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), 0 0 24px rgba(139, 92, 246, 0.3);
-  border: 2px solid var(--accent);
-}
-
-@keyframes wd-card-play {
-  from { transform: scale(0.6); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
-
-.wd-card-played {
-  animation: wd-card-play 0.25s ease-out;
-}
-
-@keyframes wd-trick-clear {
-  to { opacity: 0; transform: scale(0.8); }
-}
-
-.wd-trick-clearing {
-  animation: wd-trick-clear 0.3s ease-in forwards;
-}

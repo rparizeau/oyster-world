@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { Room, Player } from '@/lib/types';
 import type { Card, Suit, TrickCard } from '../types';
 import { getEffectiveSuit, getPlayableCards } from '../helpers';
-import { TRICK_RESULT_DISPLAY_MS } from '../constants';
 
 // ==================== TYPES ====================
 
@@ -16,6 +15,7 @@ export interface ClientWhosDealState {
   seats: string[];
   targetScore: number;
   dealerSeatIndex: number;
+  roundsPlayed: number;
   phase: 'playing' | 'game_over';
   winningTeam: 'a' | 'b' | null;
   round: ClientEuchreRound | null;
@@ -80,6 +80,13 @@ const SUIT_COLOR: Record<Suit, 'red' | 'black'> = {
   clubs: 'black',
 };
 
+const SUIT_NAME: Record<Suit, string> = {
+  spades: 'Spades',
+  hearts: 'Hearts',
+  diamonds: 'Diamonds',
+  clubs: 'Clubs',
+};
+
 type Position = 'bottom' | 'left' | 'top' | 'right';
 
 interface SeatMapping {
@@ -103,6 +110,11 @@ function getTeamForSeat(seatIndex: number): 'a' | 'b' {
 function getPositionForSeat(seatIndex: number, mySeatIndex: number): Position {
   const diff = ((seatIndex - mySeatIndex) + 4) % 4;
   return (['bottom', 'left', 'top', 'right'] as const)[diff];
+}
+
+function displayName(player: Player | null | undefined): string {
+  if (!player) return 'Player';
+  return player.name.replace(/^Bot\s+/i, '');
 }
 
 // ==================== MAIN COMPONENT ====================
@@ -141,7 +153,6 @@ export default function WhosDealGameView({
     return (
       <GameOverScreen
         gameState={gameState}
-        room={room}
         myTeam={myTeam}
         isOwner={isOwner}
         leaving={leaving}
@@ -171,27 +182,28 @@ export default function WhosDealGameView({
     p => p.id === gameState.seats[round.currentTurnSeatIndex]
   );
 
+  // Caller name for trump badge
+  const callerName = displayName(room.players.find(p => p.id === round.callingPlayerId));
+
   return (
-    <div className="flex min-h-dvh flex-col p-3 pb-4 max-w-lg mx-auto w-full">
+    <div className="flex flex-col max-w-lg mx-auto w-full overflow-x-hidden" style={{ minHeight: 0, flex: 1 }}>
       {/* Scoreboard */}
       <Scoreboard
         teams={gameState.teams}
         targetScore={gameState.targetScore}
         tricksWon={round.tricksWon}
-        myTeam={myTeam}
+        tricksPlayed={round.tricksPlayed}
         trumpPhase={round.trumpPhase}
+        trumpSuit={round.trumpSuit}
+        callerName={callerName}
+        roundsPlayed={gameState.roundsPlayed}
       />
 
       {/* Table Area */}
-      <div className="flex-1 flex flex-col items-center justify-center relative my-2">
+      <div className="flex-1 flex flex-col items-center justify-center relative px-3 my-2">
         {/* Round Summary Overlay */}
         {roundSummary && round.trumpPhase === 'round_over' && (
-          <RoundSummaryOverlay
-            summary={roundSummary}
-            teams={gameState.teams}
-            room={room}
-            seats={gameState.seats}
-          />
+          <RoundSummaryOverlay summary={roundSummary} />
         )}
 
         {/* Opponent positions (top, left, right) */}
@@ -207,13 +219,14 @@ export default function WhosDealGameView({
               const cardCount = round.handCounts[gameState.seats[seatIndex]] ?? 0;
               const trickCard = round.currentTrick.find(tc => tc.seatIndex === seatIndex);
               const isWinner = trickWinner?.seatIndex === seatIndex;
+              const isMe = seatIndex === mySeatIndex;
+              const wonTrick = round.trumpPhase === 'playing' && trickWinner?.seatIndex === seatIndex;
 
               return (
                 <OpponentSeat
                   key={seatIndex}
                   player={player ?? null}
                   position={position}
-                  seatIndex={seatIndex}
                   isActive={isActive}
                   isDealer={isDealer}
                   isInactive={isInactive}
@@ -222,14 +235,17 @@ export default function WhosDealGameView({
                   trickCard={trickCard ?? null}
                   isWinner={isWinner}
                   team={getTeamForSeat(seatIndex)}
+                  isMe={isMe}
+                  wonTrick={wonTrick}
+                  trumpPhase={round.trumpPhase}
                 />
               );
             })}
 
-          {/* Center area: trick cards for bottom player + face-up card + trump indicator */}
+          {/* Center area */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex flex-col items-center gap-2">
-              {/* Trump calling: face-up card */}
+              {/* Trump calling: face-up card (shown in center during Round 1 & 2) */}
               {(round.trumpPhase === 'round1' || round.trumpPhase === 'round2') && (
                 <FaceUpCardDisplay
                   card={round.faceUpCard}
@@ -237,8 +253,8 @@ export default function WhosDealGameView({
                 />
               )}
 
-              {/* Trick area */}
-              {round.trumpPhase === 'playing' && round.currentTrick.length > 0 && (
+              {/* Trick area - felt circle */}
+              {round.trumpPhase === 'playing' && (
                 <TrickArea
                   trick={round.currentTrick}
                   mySeatIndex={mySeatIndex}
@@ -246,11 +262,11 @@ export default function WhosDealGameView({
                 />
               )}
 
-              {/* Trump indicator */}
+              {/* Trump indicator when trick area empty */}
               {round.trumpSuit && round.trumpPhase === 'playing' && round.currentTrick.length === 0 && !trickWinner && (
                 <TrumpIndicator
                   trumpSuit={round.trumpSuit}
-                  callerName={room.players.find(p => p.id === round.callingPlayerId)?.name ?? ''}
+                  callerName={callerName}
                   goingAlone={round.goingAlone}
                 />
               )}
@@ -269,7 +285,7 @@ export default function WhosDealGameView({
           </div>
         </div>
 
-        {/* Trump Calling UI */}
+        {/* Trump Calling UI — fixed-height center content area */}
         {(round.trumpPhase === 'round1' || round.trumpPhase === 'round2') && (
           <TrumpCallingUI
             round={round}
@@ -284,40 +300,61 @@ export default function WhosDealGameView({
           />
         )}
 
-        {/* Dealer Discard UI */}
+        {/* Dealer Discard: non-dealer sees waiting message */}
         {round.trumpPhase === 'dealer_discard' && !isMyTurn && (
-          <p className="text-sm text-muted animate-pulse-soft mt-2">
-            {currentTurnPlayer?.name ?? 'Dealer'} is discarding...
-          </p>
+          <div className="h-8 flex items-center justify-center">
+            <span className="text-sm" style={{ color: 'rgba(232,230,240,.35)' }}>Dealer is discarding...</span>
+          </div>
         )}
 
-        {/* Playing status */}
-        {round.trumpPhase === 'playing' && !isMyTurn && !isInactivePartner && (
-          <p className="text-sm text-muted animate-pulse-soft mt-2">
-            {currentTurnPlayer?.isBot
-              ? `${currentTurnPlayer.name} is thinking...`
-              : `Waiting for ${currentTurnPlayer?.name ?? '...'}...`}
-          </p>
-        )}
+        {/* Status Text Area — fixed h-8 */}
+        <StatusText
+          round={round}
+          isMyTurn={isMyTurn}
+          isInactivePartner={isInactivePartner}
+          currentTurnPlayer={currentTurnPlayer ?? null}
+          ledSuit={ledSuit}
+          trickWinner={trickWinner}
+          mySeatIndex={mySeatIndex}
+        />
 
-        {/* Inactive partner message */}
-        {isInactivePartner && round.trumpPhase === 'playing' && (
-          <p className="text-sm text-accent font-semibold mt-2">
-            Your partner is going alone
-          </p>
-        )}
-
-        {/* Trump indicator (persistent during play) */}
+        {/* Trump badge (persistent during play/discard) */}
         {round.trumpSuit && (round.trumpPhase === 'playing' || round.trumpPhase === 'dealer_discard') && (
           <div className="mt-2">
             <TrumpBadge
               trumpSuit={round.trumpSuit}
-              callerName={room.players.find(p => p.id === round.callingPlayerId)?.name ?? ''}
+              callerName={callerName}
               goingAlone={round.goingAlone}
             />
           </div>
         )}
       </div>
+
+      {/* Bottom Seat Info (dealer chip, name tag, badge) */}
+      {round && mySeatIndex >= 0 && !isInactivePartner && (
+        <div className="flex flex-col items-center">
+          {/* Name tag with dealer chip */}
+          <div className="relative mb-1">
+            {mySeatIndex === gameState.dealerSeatIndex ? (
+              <div className="absolute -top-1 -left-1 z-10 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: 'var(--pearl)', border: '2px solid var(--accent-hover)', boxShadow: '0 0 8px rgba(240,194,127,0.4)' }}>
+                <span className="text-xs font-bold" style={{ color: 'var(--depth-deep)' }}>D</span>
+              </div>
+            ) : (
+              <div className="absolute -top-1 -left-1 w-6 h-6 opacity-0" />
+            )}
+            <div className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate font-semibold text-cream ${isMyTurn ? 'ring-1 ring-glass/40' : ''}`} style={{ background: isMyTurn ? 'rgba(107,191,163,.15)' : 'rgba(26,82,118,.4)', border: '1px solid rgba(245,230,202,.08)' }}>
+              <span className="truncate max-w-[80px]">{displayName(room.players.find(p => p.id === playerId))}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-1 flex-shrink-0" style={{ background: 'rgba(240,194,127,.15)', color: 'var(--pearl)' }}>YOU</span>
+            </div>
+          </div>
+          {/* Badge row */}
+          <div className="h-6 flex items-center justify-center">
+            {trickWinner?.seatIndex === mySeatIndex && round.trumpPhase === 'playing' && (
+              <span className="text-glass text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(107,191,163,.15)' }}>✓ WON</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Player Hand */}
       {!isInactivePartner ? (
@@ -341,7 +378,7 @@ export default function WhosDealGameView({
         />
       ) : (
         <div className="text-center py-4">
-          <p className="text-muted text-sm">Your partner is going alone this round</p>
+          <p className="text-sm" style={{ color: 'rgba(232,230,240,.35)' }}>Your partner is going alone this round</p>
         </div>
       )}
 
@@ -349,76 +386,79 @@ export default function WhosDealGameView({
       <button
         onClick={onLeave}
         disabled={leaving}
-        className="w-full text-xs text-muted hover:text-danger transition-colors py-2 mt-1"
+        className="w-full text-xs py-2 mt-1 px-3 transition-colors"
+        style={{ color: 'rgba(232,230,240,.25)' }}
       >
-        {leaving ? 'Leaving...' : 'Leave World'}
+        {leaving ? 'Leaving...' : 'Leave Game'}
       </button>
     </div>
   );
 }
 
-// ==================== SCOREBOARD ====================
+// ==================== SCOREBOARD (Two-Row Header) ====================
 
 function Scoreboard({
   teams,
   targetScore,
   tricksWon,
-  myTeam,
+  tricksPlayed,
   trumpPhase,
+  trumpSuit,
+  callerName,
+  roundsPlayed,
 }: {
   teams: ClientWhosDealState['teams'];
   targetScore: number;
   tricksWon: { a: number; b: number };
-  myTeam: 'a' | 'b' | null;
+  tricksPlayed: number;
   trumpPhase: string;
+  trumpSuit: Suit | null;
+  callerName: string;
+  roundsPlayed: number;
 }) {
   const showTricks = trumpPhase === 'playing' || trumpPhase === 'round_over';
 
   return (
-    <div className="flex items-center justify-between rounded-xl bg-surface border border-border px-3 py-2 mb-2 animate-fade-in">
-      <div className="flex items-center gap-3">
-        <TeamScore
-          label="A"
-          score={teams.a.score}
-          color="blue"
-          isMyTeam={myTeam === 'a'}
-        />
-        <span className="text-muted text-xs font-bold">vs</span>
-        <TeamScore
-          label="B"
-          score={teams.b.score}
-          color="orange"
-          isMyTeam={myTeam === 'b'}
-        />
-      </div>
-      <div className="flex items-center gap-3 text-xs text-muted">
-        {showTricks && (
-          <span>
-            Tricks {tricksWon.a}-{tricksWon.b}
-          </span>
+    <div>
+      {/* Row 1 — Scores & Trump */}
+      <div className="h-14 px-4 flex items-center justify-between" style={{ background: 'rgba(13,27,62,.5)' }}>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--shallow-water)' }} />
+          <span className="text-sm truncate" style={{ color: 'var(--shallow-water)' }}>Team A</span>
+          <span className="text-2xl font-bold tabular-nums flex-shrink-0" style={{ color: 'var(--shallow-water)' }}>{teams.a.score}</span>
+          <span className="text-sm flex-shrink-0" style={{ color: 'rgba(232,230,240,.2)' }}>vs</span>
+          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--coral)' }} />
+          <span className="text-sm truncate" style={{ color: 'var(--coral)' }}>Team B</span>
+          <span className="text-2xl font-bold tabular-nums flex-shrink-0" style={{ color: 'var(--coral)' }}>{teams.b.score}</span>
+        </div>
+        {trumpSuit && (
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+            <span className={`text-2xl ring-1 rounded px-1 ${SUIT_COLOR[trumpSuit] === 'red' ? 'text-red-500 ring-red-500/30' : 'ring-cream/20'}`} style={SUIT_COLOR[trumpSuit] === 'black' ? { color: 'var(--cream)' } : undefined}>
+              {SUIT_SYMBOL[trumpSuit]}
+            </span>
+            <span className="text-sm truncate max-w-[60px]" style={{ color: 'rgba(245,230,202,.45)' }}>{callerName}</span>
+          </div>
         )}
-        <span>to {targetScore}</span>
       </div>
-    </div>
-  );
-}
-
-function TeamScore({ label, score, color, isMyTeam }: {
-  label: string;
-  score: number;
-  color: 'blue' | 'orange';
-  isMyTeam: boolean;
-}) {
-  const colorClasses = color === 'blue'
-    ? 'text-blue-400 border-blue-500/30'
-    : 'text-orange-400 border-orange-500/30';
-
-  return (
-    <div className={`flex items-center gap-1.5 ${isMyTeam ? 'font-black' : ''}`}>
-      <div className={`w-2.5 h-2.5 rounded-full ${color === 'blue' ? 'bg-blue-500' : 'bg-orange-500'}`} />
-      <span className={`text-sm font-bold ${colorClasses}`}>{label}</span>
-      <span className="text-lg font-black tabular-nums text-foreground">{score}</span>
-      {isMyTeam && <span className="text-[9px] text-accent font-semibold">YOU</span>}
+      {/* Row 2 — Trick Count & Info */}
+      <div className="h-7 px-4 flex items-center justify-between text-xs" style={{ background: 'rgba(13,27,62,.5)', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+        <div className="flex items-center gap-1.5">
+          {showTricks && (
+            <>
+              <span style={{ color: 'rgba(232,230,240,.3)' }}>Tricks</span>
+              <span className="font-bold" style={{ color: 'var(--shallow-water)' }}>{tricksWon.a}</span>
+              <span style={{ color: 'rgba(232,230,240,.2)' }}>-</span>
+              <span className="font-bold" style={{ color: 'var(--coral)' }}>{tricksWon.b}</span>
+              <span className="ml-1" style={{ color: 'rgba(232,230,240,.3)' }}>Trick {tricksPlayed + 1} of 5</span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5" style={{ color: 'rgba(232,230,240,.25)' }}>
+          <span>Playing to {targetScore}</span>
+          <span>&bull;</span>
+          <span>Rd {roundsPlayed}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -428,7 +468,6 @@ function TeamScore({ label, score, color, isMyTeam }: {
 function OpponentSeat({
   player,
   position,
-  seatIndex,
   isActive,
   isDealer,
   isInactive,
@@ -437,10 +476,12 @@ function OpponentSeat({
   trickCard,
   isWinner,
   team,
+  isMe,
+  wonTrick,
+  trumpPhase,
 }: {
   player: Player | null;
   position: Position;
-  seatIndex: number;
   isActive: boolean;
   isDealer: boolean;
   isInactive: boolean;
@@ -449,6 +490,9 @@ function OpponentSeat({
   trickCard: TrickCard | null;
   isWinner: boolean;
   team: 'a' | 'b';
+  isMe: boolean;
+  wonTrick: boolean;
+  trumpPhase: string;
 }) {
   const positionStyles: Record<Position, string> = {
     top: 'top-0 left-1/2 -translate-x-1/2 flex-col items-center',
@@ -457,39 +501,74 @@ function OpponentSeat({
     bottom: '',
   };
 
-  const teamColor = team === 'a' ? 'text-blue-400' : 'text-orange-400';
-  const teamBorder = team === 'a' ? 'border-blue-500/30' : 'border-orange-500/30';
+  const isHuman = player && !player.isBot;
 
   return (
     <div className={`absolute flex ${positionStyles[position]} ${isInactive ? 'opacity-30' : ''}`}>
-      {/* Player name + indicators */}
-      <div className={`flex items-center gap-1 px-2 py-1 rounded-lg border ${teamBorder} bg-surface/80 backdrop-blur-sm mb-1 ${isActive ? 'ring-1 ring-accent shadow-[0_0_8px_rgba(139,92,246,0.3)]' : ''}`}>
-        {isDealer && (
-          <span className="text-[10px] bg-warning/20 text-warning rounded px-1 font-bold">D</span>
+      {/* Name tag with dealer chip */}
+      <div className="relative mb-1">
+        {isDealer ? (
+          <div className="absolute -top-1 -left-1 z-10 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: 'var(--pearl)', border: '2px solid var(--accent-hover)', boxShadow: '0 0 8px rgba(240,194,127,0.4)' }}>
+            <span className="text-xs font-bold" style={{ color: 'var(--depth-deep)' }}>D</span>
+          </div>
+        ) : (
+          <div className="absolute -top-1 -left-1 w-6 h-6 opacity-0" />
         )}
-        <span className={`text-xs font-semibold truncate max-w-[70px] ${teamColor}`}>
-          {player?.name ?? 'Player'}
-        </span>
-        {player?.isBot && <span className="text-[9px] text-muted">(Bot)</span>}
-        {hasPassed && (
-          <span className="text-[9px] text-muted italic">Pass</span>
+        <div
+          className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate ${isActive ? 'ring-1 ring-glass/40' : ''}`}
+          style={{
+            background: isActive ? 'rgba(107,191,163,.15)' : isHuman ? 'rgba(26,82,118,.4)' : 'rgba(13,27,62,.3)',
+            border: '1px solid rgba(245,230,202,.06)',
+            color: isHuman ? 'var(--cream)' : 'rgba(232,230,240,.35)',
+            fontWeight: isHuman ? 600 : 400,
+          }}
+        >
+          <span className="truncate max-w-[80px]">{displayName(player)}</span>
+          {isMe && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-1 flex-shrink-0" style={{ background: 'rgba(240,194,127,.15)', color: 'var(--pearl)' }}>YOU</span>
+          )}
+        </div>
+      </div>
+
+      {/* Badge row — h-6, WON / ALONE or invisible placeholder */}
+      <div className="h-6 flex items-center justify-center">
+        {wonTrick && (
+          <span className="text-glass text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(107,191,163,.15)' }}>&#10003; WON</span>
+        )}
+        {isInactive && trumpPhase === 'playing' && (
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(201,101,138,.15)', color: 'var(--star)' }}>ALONE</span>
         )}
       </div>
 
-      {/* Card backs or inactive message */}
-      {isInactive ? (
-        <span className="text-[10px] text-muted italic">Sitting out</span>
-      ) : (
-        <div className={`flex ${position === 'top' ? 'flex-row' : 'flex-row'} gap-0.5`}>
-          {Array.from({ length: Math.min(cardCount, 5) }).map((_, i) => (
-            <div key={i} className="wd-card wd-card-back" style={{ width: 28, height: 40, marginLeft: i > 0 ? -8 : 0 }} />
-          ))}
-        </div>
-      )}
+      {/* Cards row — h-14 */}
+      <div className="h-14 flex items-center justify-center gap-0.5">
+        {isInactive ? (
+          <span className="text-xs italic" style={{ color: 'rgba(232,230,240,.2)' }}>Sitting out</span>
+        ) : (
+          Array.from({ length: Math.min(cardCount, 5) }).map((_, i) => (
+            <div key={i} className={`w-7 h-10 rounded-lg shadow-md relative flex-shrink-0 ${i > 0 ? '-ml-2' : ''}`} style={{ background: 'linear-gradient(to bottom right, #1a5276, #0d1b3e)', border: '2px solid rgba(126,184,212,.3)' }}>
+              <div className="absolute inset-[3px] rounded flex items-center justify-center text-[8px]" style={{ border: '1px solid rgba(126,184,212,.15)', color: 'rgba(126,184,212,.25)' }}>✦</div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Status row — h-5 */}
+      <div className="h-5 flex items-center justify-center">
+        {isActive && trumpPhase === 'playing' && (
+          <span className="text-xs flex items-center gap-1" style={{ color: 'rgba(232,230,240,.35)' }}>
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'rgba(232,230,240,.35)' }} />
+            Thinking...
+          </span>
+        )}
+        {hasPassed && !isActive && (
+          <span className="text-xs italic" style={{ color: 'rgba(232,230,240,.2)' }}>Pass</span>
+        )}
+      </div>
 
       {/* Trick card */}
       {trickCard && (
-        <div className={`mt-1 ${isWinner ? '' : ''}`}>
+        <div className="mt-1">
           <PlayingCard card={trickCard.card} size="trick" winning={isWinner} />
         </div>
       )}
@@ -510,13 +589,30 @@ function PlayingCard({
 }) {
   const color = SUIT_COLOR[card.suit];
   const symbol = SUIT_SYMBOL[card.suit];
+  const isRed = color === 'red';
 
-  const sizeClass = size === 'trick' ? 'wd-card-trick' : size === 'large' ? '' : '';
+  if (size === 'trick') {
+    return (
+      <div className={`w-12 h-[68px] sm:w-14 sm:h-20 bg-white rounded-lg border-2 border-gray-200 shadow-lg flex flex-col items-center justify-center animate-scale-in ${winning ? 'ring-2 ring-glass shadow-[0_0_12px_rgba(107,191,163,0.3)]' : ''}`}>
+        <span className={`text-base font-bold ${isRed ? 'text-red-600' : 'text-gray-900'}`}>{card.rank}</span>
+        <span className={`text-sm ${isRed ? 'text-red-500' : 'text-gray-700'}`}>{symbol}</span>
+      </div>
+    );
+  }
+
+  if (size === 'large') {
+    return (
+      <div className="w-16 h-24 bg-white rounded-lg border-2 border-gray-200 shadow-lg flex flex-col items-center justify-center">
+        <span className={`text-lg font-bold ${isRed ? 'text-red-600' : 'text-gray-900'}`}>{card.rank}</span>
+        <span className={`text-xl ${isRed ? 'text-red-500' : 'text-gray-700'}`}>{symbol}</span>
+      </div>
+    );
+  }
 
   return (
-    <div className={`wd-card wd-card-face ${color} ${sizeClass} ${winning ? 'wd-card-trick winning' : ''} ${size === 'trick' ? 'wd-card-played' : ''}`}>
-      <span className="text-xs font-black leading-none">{card.rank}</span>
-      <span className="text-sm leading-none">{symbol}</span>
+    <div className="w-12 h-[68px] bg-white rounded-lg border-2 border-gray-200 shadow-lg flex flex-col items-center justify-center">
+      <span className={`text-sm font-bold ${isRed ? 'text-red-600' : 'text-gray-900'}`}>{card.rank}</span>
+      <span className={`text-base ${isRed ? 'text-red-500' : 'text-gray-700'}`}>{symbol}</span>
     </div>
   );
 }
@@ -524,20 +620,18 @@ function PlayingCard({
 // ==================== FACE-UP CARD (center, for trump calling) ====================
 
 function FaceUpCardDisplay({ card, dimmed }: { card: Card; dimmed: boolean }) {
-  const color = SUIT_COLOR[card.suit];
+  const isRed = SUIT_COLOR[card.suit] === 'red';
   const symbol = SUIT_SYMBOL[card.suit];
 
   return (
-    <div className={`wd-card wd-card-face ${color} animate-bounce-in ${dimmed ? 'opacity-40' : ''}`}
-      style={{ width: 60, height: 84 }}
-    >
-      <span className="text-base font-black leading-none">{card.rank}</span>
-      <span className="text-xl leading-none">{symbol}</span>
+    <div className={`w-16 h-24 bg-white rounded-lg border-2 border-gray-200 shadow-lg flex flex-col items-center justify-center animate-bounce-in ${dimmed ? 'opacity-40' : ''}`}>
+      <span className={`text-lg font-bold ${isRed ? 'text-red-600' : 'text-gray-900'}`}>{card.rank}</span>
+      <span className={`text-xl ${isRed ? 'text-red-500' : 'text-gray-700'}`}>{symbol}</span>
     </div>
   );
 }
 
-// ==================== TRICK AREA ====================
+// ==================== TRICK AREA (Felt Circle) ====================
 
 function TrickArea({
   trick,
@@ -548,23 +642,29 @@ function TrickArea({
   mySeatIndex: number;
   trickWinner: { seatIndex: number; team: 'a' | 'b' } | null;
 }) {
-  // Position trick cards based on seat positions relative to player
   return (
-    <div className="relative" style={{ width: 120, height: 90 }}>
-      {trick.filter(tc => tc.seatIndex !== mySeatIndex).map((tc) => {
-        const pos = getPositionForSeat(tc.seatIndex, mySeatIndex);
-        const isWinner = trickWinner?.seatIndex === tc.seatIndex;
+    <div className="w-36 h-36 sm:w-48 sm:h-48 rounded-full relative" style={{ background: 'rgba(13,27,62,.4)', border: '1px solid rgba(107,191,163,.12)' }}>
+      {(['top', 'left', 'right', 'bottom'] as const).map(pos => {
+        const trickCard = trick.find(tc => {
+          const p = getPositionForSeat(tc.seatIndex, mySeatIndex);
+          return p === pos;
+        });
+        const isWinner = trickCard ? trickWinner?.seatIndex === trickCard.seatIndex : false;
 
-        const posStyle: Record<Position, React.CSSProperties> = {
-          top: { position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)' },
-          left: { position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)' },
-          right: { position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)' },
-          bottom: { position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)' },
+        const posStyle: Record<Position, string> = {
+          top: 'absolute top-2 left-1/2 -translate-x-1/2',
+          bottom: 'absolute bottom-2 left-1/2 -translate-x-1/2',
+          left: 'absolute left-2 top-1/2 -translate-y-1/2',
+          right: 'absolute right-2 top-1/2 -translate-y-1/2',
         };
 
         return (
-          <div key={tc.card.id} style={posStyle[pos]}>
-            <PlayingCard card={tc.card} size="trick" winning={isWinner} />
+          <div key={pos} className={posStyle[pos]}>
+            {trickCard ? (
+              <PlayingCard card={trickCard.card} size="trick" winning={isWinner} />
+            ) : (
+              <div className="w-12 h-[68px] sm:w-14 sm:h-20" />
+            )}
           </div>
         );
       })}
@@ -598,41 +698,31 @@ function TrumpCallingUI({
   const [selectedSuit, setSelectedSuit] = useState<Suit | null>(null);
 
   if (!isMyTurn) {
-    // Waiting message
-    const isStickTheDealer =
-      round.trumpPhase === 'round2' &&
-      round.currentTurnSeatIndex === dealerSeatIndex &&
-      round.passedPlayers.length >= 3;
-
     return (
-      <div className="text-center mt-3 animate-fade-in">
-        <p className="text-sm text-muted">
-          {isStickTheDealer
-            ? `${currentTurnPlayer?.name ?? 'Dealer'} must call trump`
-            : `Waiting for ${currentTurnPlayer?.name ?? '...'}...`}
+      <div className="min-h-[120px] flex items-center justify-center">
+        <p className="text-sm" style={{ color: 'rgba(232,230,240,.35)' }}>
+          {displayName(currentTurnPlayer)} is deciding...
         </p>
       </div>
     );
   }
 
+  // Round 1
   if (round.trumpPhase === 'round1') {
     return (
-      <div className="flex flex-col items-center gap-3 mt-3 animate-fade-in-up">
-        <p className="text-xs text-muted">
-          Trump would be <span className={`font-bold ${SUIT_COLOR[round.faceUpCard.suit] === 'red' ? 'text-red-400' : 'text-foreground'}`}>
-            {SUIT_SYMBOL[round.faceUpCard.suit]} {round.faceUpCard.suit}
-          </span>
-        </p>
-        <div className="flex gap-2">
+      <div className="min-h-[120px] flex flex-col items-center justify-center gap-3 animate-fade-in">
+        <div className="flex gap-3">
           <button
             onClick={() => onCallTrump({ pickUp: true, goAlone })}
-            className="rounded-xl bg-accent px-5 py-3 text-sm font-bold text-white hover:bg-accent-hover active:scale-[0.97] transition-all"
+            className="text-white font-semibold min-h-[44px] rounded-full px-6 transition"
+            style={{ background: 'var(--glass)' }}
           >
             Order it up
           </button>
           <button
             onClick={onPassTrump}
-            className="rounded-xl border border-border px-5 py-3 text-sm font-semibold text-muted hover:bg-surface-light active:scale-[0.97] transition-all"
+            className="text-cream font-semibold min-h-[44px] rounded-full px-6 transition"
+            style={{ background: 'rgba(26,82,118,.5)' }}
           >
             Pass
           </button>
@@ -643,20 +733,12 @@ function TrumpCallingUI({
   }
 
   // Round 2
-  const isStuck =
-    mySeatIndex === dealerSeatIndex && round.passedPlayers.length >= 3;
+  const isStuck = mySeatIndex === dealerSeatIndex && round.passedPlayers.length >= 3;
   const suits: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
 
   return (
-    <div className="flex flex-col items-center gap-3 mt-3 animate-fade-in-up">
-      <p className="text-xs text-muted">
-        Name trump (cannot pick{' '}
-        <span className={`font-bold ${SUIT_COLOR[round.faceUpCard.suit] === 'red' ? 'text-red-400' : 'text-foreground'}`}>
-          {SUIT_SYMBOL[round.faceUpCard.suit]}
-        </span>
-        )
-      </p>
-      <div className="flex gap-2">
+    <div className="min-h-[120px] flex flex-col items-center justify-center gap-3 animate-fade-in">
+      <div className="grid grid-cols-2 gap-2">
         {suits.map(suit => {
           const disabled = suit === round.faceUpCard.suit;
           const isSelected = selectedSuit === suit;
@@ -665,45 +747,54 @@ function TrumpCallingUI({
           return (
             <button
               key={suit}
-              onClick={() => !disabled && setSelectedSuit(isSelected ? null : suit)}
+              onClick={() => {
+                if (disabled) return;
+                if (isSelected) {
+                  onCallTrump({ suit, goAlone });
+                  setSelectedSuit(null);
+                } else {
+                  setSelectedSuit(suit);
+                }
+              }}
               disabled={disabled}
-              className={`w-14 h-14 rounded-xl text-2xl font-bold transition-all ${
+              className={`min-h-[44px] min-w-[44px] rounded-lg flex items-center justify-center gap-1.5 px-3 py-2 transition ${
                 disabled
-                  ? 'bg-surface border border-border text-muted/30 cursor-not-allowed'
+                  ? 'opacity-30 cursor-not-allowed pointer-events-none'
                   : isSelected
-                    ? 'bg-accent/20 border-2 border-accent shadow-[0_0_10px_rgba(139,92,246,0.3)]'
-                    : `bg-surface-light border border-border hover:border-border-light ${sColor === 'red' ? 'text-red-400' : 'text-foreground'}`
+                    ? 'text-white font-semibold'
+                    : 'text-cream'
               }`}
+              style={
+                disabled
+                  ? { background: 'rgba(13,27,62,.4)', color: 'rgba(232,230,240,.25)' }
+                  : isSelected
+                    ? { background: 'var(--glass)' }
+                    : { background: 'rgba(26,82,118,.5)' }
+              }
             >
-              {SUIT_SYMBOL[suit]}
+              <span className={`text-lg ${!disabled && !isSelected && sColor === 'red' ? 'text-red-400' : ''}`}>
+                {SUIT_SYMBOL[suit]}
+              </span>
+              <span className="text-sm">{SUIT_NAME[suit]}</span>
             </button>
           );
         })}
       </div>
-      <div className="flex gap-2">
-        {selectedSuit && (
-          <button
-            onClick={() => {
-              onCallTrump({ suit: selectedSuit, goAlone });
-              setSelectedSuit(null);
-            }}
-            className="rounded-xl bg-accent px-5 py-3 text-sm font-bold text-white hover:bg-accent-hover active:scale-[0.97] transition-all"
-          >
-            Call {SUIT_SYMBOL[selectedSuit]}
-          </button>
-        )}
-        {!isStuck && (
+
+      <div className="h-[44px] flex items-center justify-center">
+        {!isStuck ? (
           <button
             onClick={onPassTrump}
-            className="rounded-xl border border-border px-5 py-3 text-sm font-semibold text-muted hover:bg-surface-light active:scale-[0.97] transition-all"
+            className="text-cream font-semibold min-h-[44px] rounded-full px-6 transition"
+            style={{ background: 'rgba(26,82,118,.5)' }}
           >
             Pass
           </button>
+        ) : (
+          <p className="text-sm font-semibold" style={{ color: 'var(--pearl)' }}>You must call trump</p>
         )}
       </div>
-      {isStuck && !selectedSuit && (
-        <p className="text-xs text-warning font-semibold">You must call trump (Stick the Dealer)</p>
-      )}
+
       <GoAloneToggle checked={goAlone} onToggle={onGoAloneToggle} />
     </div>
   );
@@ -713,15 +804,14 @@ function GoAloneToggle({ checked, onToggle }: { checked: boolean; onToggle: () =
   return (
     <button
       onClick={onToggle}
-      className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg transition-all ${
-        checked
-          ? 'bg-accent/20 text-accent border border-accent/40'
-          : 'text-muted hover:text-foreground border border-transparent'
+      className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-all ${
+        checked ? 'text-glass' : ''
       }`}
+      style={!checked ? { color: 'rgba(245,230,202,.4)' } : undefined}
     >
       <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
-        checked ? 'border-accent bg-accent' : 'border-muted'
-      }`}>
+        checked ? 'border-glass bg-glass' : ''
+      }`} style={!checked ? { borderColor: 'rgba(232,230,240,.3)' } : undefined}>
         {checked && (
           <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -733,6 +823,69 @@ function GoAloneToggle({ checked, onToggle }: { checked: boolean; onToggle: () =
   );
 }
 
+// ==================== STATUS TEXT (fixed h-8) ====================
+
+function StatusText({
+  round,
+  isMyTurn,
+  isInactivePartner,
+  currentTurnPlayer,
+  ledSuit,
+  trickWinner,
+  mySeatIndex,
+}: {
+  round: ClientEuchreRound;
+  isMyTurn: boolean;
+  isInactivePartner: boolean;
+  currentTurnPlayer: Player | null;
+  ledSuit: Suit | null;
+  trickWinner: { seatIndex: number; team: 'a' | 'b' } | null;
+  mySeatIndex: number;
+}) {
+  if (round.trumpPhase !== 'playing') return <div className="h-8" />;
+
+  if (trickWinner) {
+    const isMyWin = trickWinner.seatIndex === mySeatIndex;
+    return (
+      <div className="h-8 flex items-center justify-center">
+        <span className="text-glass text-sm font-medium">
+          {isMyWin ? '✓ You won the trick!' : ''}
+        </span>
+      </div>
+    );
+  }
+
+  if (isInactivePartner) {
+    return (
+      <div className="h-8 flex items-center justify-center">
+        <span className="text-sm" style={{ color: 'rgba(232,230,240,.35)' }}>Your partner is going alone</span>
+      </div>
+    );
+  }
+
+  if (isMyTurn) {
+    return (
+      <div className="h-8 flex items-center justify-center">
+        <span className="text-glass text-sm font-medium">
+          {ledSuit
+            ? `Your turn — follow suit ${SUIT_SYMBOL[ledSuit]}`
+            : 'Your turn — lead any card'}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-8 flex items-center justify-center">
+      <span className="text-sm" style={{ color: 'rgba(232,230,240,.35)' }}>
+        {currentTurnPlayer?.isBot
+          ? `${displayName(currentTurnPlayer)} is thinking...`
+          : `Waiting for ${displayName(currentTurnPlayer)}...`}
+      </span>
+    </div>
+  );
+}
+
 // ==================== TRUMP INDICATOR ====================
 
 function TrumpIndicator({ trumpSuit, callerName, goingAlone }: {
@@ -740,15 +893,15 @@ function TrumpIndicator({ trumpSuit, callerName, goingAlone }: {
   callerName: string;
   goingAlone: boolean;
 }) {
-  const color = SUIT_COLOR[trumpSuit];
+  const isRed = SUIT_COLOR[trumpSuit] === 'red';
 
   return (
     <div className="flex flex-col items-center gap-0.5 animate-fade-in">
-      <span className={`text-3xl ${color === 'red' ? 'text-red-400' : 'text-foreground'}`}>
+      <span className={`text-3xl ${isRed ? 'text-red-400' : ''}`} style={!isRed ? { color: 'var(--cream)' } : undefined}>
         {SUIT_SYMBOL[trumpSuit]}
       </span>
-      <span className="text-[10px] text-muted">{callerName} called trump</span>
-      {goingAlone && <span className="text-[10px] text-accent font-semibold">Going Alone</span>}
+      <span className="text-[10px]" style={{ color: 'rgba(232,230,240,.3)' }}>{callerName} called trump</span>
+      {goingAlone && <span className="text-[10px] text-glass font-semibold">Going Alone</span>}
     </div>
   );
 }
@@ -758,15 +911,15 @@ function TrumpBadge({ trumpSuit, callerName, goingAlone }: {
   callerName: string;
   goingAlone: boolean;
 }) {
-  const color = SUIT_COLOR[trumpSuit];
+  const isRed = SUIT_COLOR[trumpSuit] === 'red';
 
   return (
-    <div className="flex items-center gap-1.5 rounded-lg bg-surface border border-border px-2.5 py-1 text-xs">
-      <span className={`text-base ${color === 'red' ? 'text-red-400' : 'text-foreground'}`}>
+    <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs" style={{ background: 'rgba(13,27,62,.5)', border: '1px solid rgba(255,255,255,.04)' }}>
+      <span className={`text-base ${isRed ? 'text-red-400' : ''}`} style={!isRed ? { color: 'var(--cream)' } : undefined}>
         {SUIT_SYMBOL[trumpSuit]}
       </span>
-      <span className="text-muted">Trump</span>
-      {goingAlone && <span className="text-accent font-semibold">Alone</span>}
+      <span className="truncate max-w-[60px]" style={{ color: 'rgba(245,230,202,.45)' }}>{callerName}</span>
+      {goingAlone && <span className="text-glass font-semibold">Alone</span>}
     </div>
   );
 }
@@ -796,22 +949,15 @@ function PlayerHand({
   const isDiscard = phase === 'dealer_discard';
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      {/* Instruction */}
-      {canInteract && (
-        <p className="text-xs text-muted animate-fade-in">
-          {isDiscard ? 'Choose a card to discard' : 'Select a card to play'}
-        </p>
-      )}
-
-      {/* Cards */}
-      <div className="flex justify-center gap-1.5 overflow-x-auto pb-1 px-1 w-full" style={{ scrollSnapType: 'x mandatory' }}>
+    <div className="flex flex-col items-center gap-2 px-3">
+      <div className="flex justify-center gap-1.5 overflow-x-auto flex-nowrap pb-1 px-1 w-full">
         {hand.map((card) => {
           const isPlayable = isDiscard || playableIds.has(card.id);
           const isSelected = selectedCard === card.id;
           const isDimmed = canInteract && !isDiscard && !isPlayable;
           const isNew = dealerPickedUp?.id === card.id;
-          const color = SUIT_COLOR[card.suit];
+          const isRed = SUIT_COLOR[card.suit] === 'red';
+          const symbol = SUIT_SYMBOL[card.suit];
 
           return (
             <button
@@ -822,13 +968,21 @@ function PlayerHand({
                 onSelect(isSelected ? null : card.id);
               }}
               disabled={!canInteract || isDimmed}
-              className={`wd-card wd-card-face wd-card-hand ${color} ${isSelected ? 'selected' : ''} ${isDimmed ? 'dimmed' : ''} ${isNew ? 'ring-2 ring-accent' : ''}`}
-              style={{ scrollSnapAlign: 'start' }}
+              className={`w-16 h-24 bg-white rounded-lg border-2 shadow-lg flex flex-col items-center justify-center flex-shrink-0 relative transition ${
+                isSelected
+                  ? '-translate-y-2 shadow-[0_0_8px_rgba(240,194,127,0.4)]'
+                  : isDimmed
+                    ? 'opacity-40 cursor-not-allowed border-gray-200'
+                    : canInteract
+                      ? 'border-gray-200 cursor-pointer hover:-translate-y-1'
+                      : 'border-gray-200'
+              }`}
+              style={isSelected ? { borderColor: 'var(--pearl)' } : undefined}
             >
-              <span className="text-sm font-black leading-none">{card.rank}</span>
-              <span className="text-lg leading-none">{SUIT_SYMBOL[card.suit]}</span>
+              <span className={`text-lg font-bold leading-none ${isRed ? 'text-red-600' : 'text-gray-900'}`}>{card.rank}</span>
+              <span className={`text-base leading-none ${isRed ? 'text-red-500' : 'text-gray-700'}`}>{symbol}</span>
               {isNew && (
-                <span className="absolute -top-1 -right-1 text-[8px] bg-accent text-white rounded px-0.5 font-bold">
+                <span className="absolute -top-1 -right-1 text-[8px] text-white rounded px-0.5 font-bold" style={{ background: 'var(--glass)' }}>
                   NEW
                 </span>
               )}
@@ -837,15 +991,19 @@ function PlayerHand({
         })}
       </div>
 
-      {/* Confirm button */}
-      {selectedCard && canInteract && (
-        <button
-          onClick={onConfirm}
-          className="rounded-xl bg-accent px-6 py-2.5 text-sm font-bold text-white hover:bg-accent-hover active:scale-[0.97] transition-all animate-fade-in-up"
-        >
-          {isDiscard ? 'Discard' : 'Play'}
-        </button>
-      )}
+      <div className="h-12 flex items-center justify-center">
+        {selectedCard && canInteract ? (
+          <button
+            onClick={onConfirm}
+            className="text-white font-semibold px-6 py-2 rounded-full transition"
+            style={{ background: 'var(--glass)' }}
+          >
+            {isDiscard ? 'Discard' : 'Play Card'}
+          </button>
+        ) : canInteract ? (
+          <span className="text-sm" style={{ color: 'rgba(232,230,240,.2)' }}>Tap a card to {isDiscard ? 'discard' : 'select'}</span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -854,9 +1012,6 @@ function PlayerHand({
 
 function RoundSummaryOverlay({
   summary,
-  teams,
-  room,
-  seats,
 }: {
   summary: {
     callingTeam: 'a' | 'b';
@@ -865,9 +1020,6 @@ function RoundSummaryOverlay({
     scores: { a: number; b: number };
     isGameOver: boolean;
   };
-  teams: ClientWhosDealState['teams'];
-  room: Room;
-  seats: string[];
 }) {
   const aPoints = summary.pointsAwarded.a;
   const bPoints = summary.pointsAwarded.b;
@@ -876,25 +1028,25 @@ function RoundSummaryOverlay({
   const isEuchre = winningTeam !== summary.callingTeam;
 
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-xl animate-fade-in">
-      <div className="bg-surface border border-border rounded-2xl p-5 text-center max-w-xs w-full animate-scale-in">
-        <p className="text-lg font-black text-foreground mb-1">
+    <div className="absolute inset-0 z-10 flex items-center justify-center backdrop-blur-sm rounded-xl animate-fade-in" style={{ background: 'rgba(8,12,26,.8)' }}>
+      <div className="rounded-2xl p-5 text-center max-w-xs w-full animate-scale-in" style={{ background: 'rgba(13,27,62,.8)', border: '1px solid rgba(255,255,255,.06)' }}>
+        <p className="text-lg font-black text-cream mb-1">
           {isEuchre ? 'Euchre!' : points >= 4 ? 'Alone Sweep!' : points >= 2 ? 'March!' : 'Round Over'}
         </p>
-        <p className="text-sm text-muted mb-3">
+        <p className="text-sm mb-3" style={{ color: winningTeam === 'a' ? 'var(--shallow-water)' : 'var(--coral)' }}>
           Team {winningTeam.toUpperCase()} +{points} point{points > 1 ? 's' : ''}
         </p>
         <div className="flex justify-center gap-4 text-sm">
           <div>
-            <span className="text-blue-400 font-bold">Team A</span>
-            <span className="text-foreground font-black ml-1">{summary.scores.a}</span>
+            <span className="font-bold" style={{ color: 'var(--shallow-water)' }}>Team A</span>
+            <span className="font-black ml-1" style={{ color: 'var(--shallow-water)' }}>{summary.scores.a}</span>
           </div>
           <div>
-            <span className="text-orange-400 font-bold">Team B</span>
-            <span className="text-foreground font-black ml-1">{summary.scores.b}</span>
+            <span className="font-bold" style={{ color: 'var(--coral)' }}>Team B</span>
+            <span className="font-black ml-1" style={{ color: 'var(--coral)' }}>{summary.scores.b}</span>
           </div>
         </div>
-        <p className="text-xs text-muted mt-2">
+        <p className="text-xs mt-2" style={{ color: 'rgba(232,230,240,.3)' }}>
           Tricks: A {summary.tricksWon.a} - B {summary.tricksWon.b}
         </p>
       </div>
@@ -906,7 +1058,6 @@ function RoundSummaryOverlay({
 
 function GameOverScreen({
   gameState,
-  room,
   myTeam,
   isOwner,
   leaving,
@@ -914,7 +1065,6 @@ function GameOverScreen({
   onLeave,
 }: {
   gameState: ClientWhosDealState;
-  room: Room;
   myTeam: 'a' | 'b' | null;
   isOwner: boolean;
   leaving: boolean;
@@ -922,51 +1072,47 @@ function GameOverScreen({
   onLeave: () => void;
 }) {
   const winner = gameState.winningTeam;
-  const didWin = winner === myTeam;
   const teamAScore = gameState.teams.a.score;
   const teamBScore = gameState.teams.b.score;
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 p-6 animate-fade-in">
-      <div className="rounded-2xl bg-surface border border-border p-8 text-center max-w-sm w-full animate-scale-in">
-        <div className={`text-5xl mb-3 ${didWin ? 'animate-bounce-in' : ''}`}>
-          {didWin ? '🎉' : '😔'}
-        </div>
-        <h2 className="text-2xl font-black text-foreground mb-1">
-          {didWin ? 'You Win!' : 'You Lose'}
-        </h2>
-        <p className={`text-lg font-bold mb-4 ${winner === 'a' ? 'text-blue-400' : 'text-orange-400'}`}>
-          Team {winner?.toUpperCase()} Wins!
-        </p>
+    <div className="flex flex-col items-center justify-center p-6 overflow-x-hidden" style={{ minHeight: 0, flex: 1 }}>
+      <h1 className="text-3xl font-bold" style={{ color: winner === 'a' ? 'var(--shallow-water)' : 'var(--coral)' }}>
+        Team {winner?.toUpperCase()}
+      </h1>
+      <p className="text-xl mt-1" style={{ color: 'rgba(245,230,202,.45)' }}>wins!</p>
 
-        <div className="flex justify-center gap-6 mb-6">
-          <div className="text-center">
-            <p className="text-xs text-blue-400 font-bold mb-0.5">Team A</p>
-            <p className="text-3xl font-black tabular-nums">{teamAScore}</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-orange-400 font-bold mb-0.5">Team B</p>
-            <p className="text-3xl font-black tabular-nums">{teamBScore}</p>
-          </div>
+      <div className="flex gap-8 mt-6">
+        <div className="text-center">
+          <p className="text-sm font-bold" style={{ color: 'var(--shallow-water)' }}>Team A</p>
+          <p className="text-3xl font-black tabular-nums" style={{ color: 'var(--shallow-water)' }}>{teamAScore}</p>
         </div>
+        <div className="text-center">
+          <p className="text-sm font-bold" style={{ color: 'var(--coral)' }}>Team B</p>
+          <p className="text-3xl font-black tabular-nums" style={{ color: 'var(--coral)' }}>{teamBScore}</p>
+        </div>
+      </div>
 
-        <div className="flex flex-col gap-3">
-          {isOwner && (
-            <button
-              onClick={onPlayAgain}
-              className="w-full rounded-xl bg-accent px-6 py-4 text-lg font-bold text-white hover:bg-accent-hover active:scale-[0.98] transition-all"
-            >
-              Play Again
-            </button>
-          )}
+      <p className="text-sm mt-4" style={{ color: 'rgba(232,230,240,.3)' }}>
+        After {gameState.roundsPlayed} round{gameState.roundsPlayed !== 1 ? 's' : ''}
+      </p>
+
+      <div className="flex gap-3 mt-8 min-h-[52px]">
+        {isOwner && (
           <button
-            onClick={onLeave}
-            disabled={leaving}
-            className="w-full rounded-xl border border-danger/30 px-6 py-3 font-semibold text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98] transition-all"
+            onClick={onPlayAgain}
+            className="btn-primary px-8 py-3 rounded-full"
           >
-            {leaving ? 'Leaving...' : 'Leave World'}
+            Play Again
           </button>
-        </div>
+        )}
+        <button
+          onClick={onLeave}
+          disabled={leaving}
+          className="btn-danger px-8 py-3 rounded-full disabled:opacity-50"
+        >
+          {leaving ? 'Leaving...' : 'Leave Game'}
+        </button>
       </div>
     </div>
   );

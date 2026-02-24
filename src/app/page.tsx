@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import PearlGlobe from '@/components/PearlGlobe';
 
 interface GameCardInfo {
   id: string;
@@ -21,9 +22,9 @@ const GAMES: GameCardInfo[] = [
   },
   {
     id: '4-kate',
-    name: '4 Kate',
+    name: 'Take 4',
     description: 'Classic Connect 4. Drop pieces. Get four in a row.',
-    icon: '🔴',
+    icon: '❤️',
     maxPlayers: 2,
   },
   {
@@ -35,7 +36,7 @@ const GAMES: GameCardInfo[] = [
   },
 ];
 
-type Mode = 'home' | 'create-name' | 'create-game' | 'join';
+type Mode = 'home' | 'create-name' | 'create-game' | 'loading' | 'join';
 
 export default function HomePage() {
   const router = useRouter();
@@ -52,7 +53,8 @@ export default function HomePage() {
       setError('Please select a game');
       return;
     }
-    setLoading(true);
+    // Transition to descent loading screen
+    setMode('loading');
     setError('');
     try {
       const res = await fetch('/api/rooms/create', {
@@ -62,16 +64,19 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Failed to create world');
+        setError(data.error || 'Failed to create game');
+        setMode('create-game');
         return;
       }
       sessionStorage.setItem('playerId', data.playerId);
       sessionStorage.setItem('playerName', data.playerName);
-      router.push(`/room/${data.roomCode}`);
+      // Auto-advance after 1.5s minimum
+      setTimeout(() => {
+        router.push(`/room/${data.roomCode}`);
+      }, 1500);
     } catch {
       setError('Network error. Please try again.');
-    } finally {
-      setLoading(false);
+      setMode('create-game');
     }
   }, [name, selectedGame, router]);
 
@@ -81,7 +86,7 @@ export default function HomePage() {
       return;
     }
     if (!roomCode.trim()) {
-      setError('Please enter a world code');
+      setError('Please enter a game code');
       return;
     }
     setLoading(true);
@@ -94,7 +99,7 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Failed to join world');
+        setError(data.error || 'Failed to join game');
         return;
       }
       sessionStorage.setItem('playerId', data.playerId);
@@ -134,156 +139,207 @@ export default function HomePage() {
     setError('');
   }
 
-  // --- HOME ---
+  // --- HOME (Surface) ---
   if (mode === 'home') {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-10 p-6 animate-fade-in">
-        <div className="text-center">
-          <h1 className="text-5xl font-black tracking-tight text-foreground mb-2">
-            Oyster World
-          </h1>
-          <p className="text-muted-light text-lg">Pick a game. Start some trouble.</p>
+      <div className="bg-depth-surface flex min-h-dvh flex-col items-center justify-center p-6 animate-fade-in relative overflow-hidden">
+        <Bubbles />
+        <div className="relative z-10 flex flex-col items-center text-center">
+          <div className="mb-6">
+            <PearlGlobe size={96} animate="float" />
+          </div>
+          <h1 className="font-display text-[2em] text-cream mb-1">My Oyster World</h1>
+          <p className="text-sm font-semibold mb-8" style={{ color: 'rgba(240,194,127,.6)' }}>
+            Every game is a pearl.
+          </p>
+          <div className="flex flex-col gap-3 w-full max-w-[260px]">
+            <button
+              onClick={() => { setMode('create-name'); setError(''); }}
+              className="btn-primary"
+            >
+              Dive In
+            </button>
+            <button
+              onClick={() => { setMode('join'); setError(''); }}
+              className="btn-secondary"
+            >
+              Join a Game
+            </button>
+          </div>
         </div>
-
-        <div className="flex flex-col gap-4 w-full max-w-xs">
-          <button
-            onClick={() => { setMode('create-name'); setError(''); }}
-            className="w-full rounded-xl bg-accent px-6 py-4 text-lg font-bold text-white hover:bg-accent-hover active:scale-[0.98] transition-all"
-          >
-            Create a World
-          </button>
-          <button
-            onClick={() => { setMode('join'); setError(''); }}
-            className="w-full rounded-xl border-2 border-border-light px-6 py-4 text-lg font-bold text-foreground hover:border-muted-light hover:bg-surface-light active:scale-[0.98] transition-all"
-          >
-            Join a World
-          </button>
+        <div className="absolute bottom-0 left-0 right-0 py-3.5 text-center text-[0.65em] font-semibold" style={{ color: 'rgba(240,194,127,.18)' }}>
+          We make pearls faster than oysters.
         </div>
       </div>
     );
   }
 
-  // --- JOIN ---
+  // --- JOIN (Wading) ---
   if (mode === 'join') {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-8 p-6 animate-fade-in">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Join a World</h1>
-          <p className="mt-2 text-muted">Enter your name and world code</p>
-        </div>
+      <div className="bg-depth-wading flex min-h-dvh flex-col items-center justify-center p-6 animate-fade-in">
+        <div className="flex flex-col items-center text-center">
+          <div className="mb-4">
+            <PearlGlobe size={64} animate="float" />
+          </div>
+          <h1 className="font-display text-[1.7em] text-pearl mb-1">Join a Game</h1>
+          <p className="text-sm mb-6" style={{ color: 'rgba(245,230,202,.45)' }}>
+            Enter your name and the code you were given
+          </p>
+          <div className="flex flex-col gap-3 w-full max-w-[260px]" onKeyDown={handleKeyDown}>
+            <input
+              type="text"
+              placeholder="Your name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={20}
+              className="input-ocean"
+              autoFocus
+            />
+            <input
+              type="text"
+              placeholder="GAME CODE"
+              value={roomCode}
+              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+              maxLength={6}
+              className="input-ocean input-ocean-code"
+            />
 
-        <div className="flex flex-col gap-4 w-full max-w-xs" onKeyDown={handleKeyDown}>
-          <input
-            type="text"
-            placeholder="Your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={20}
-            className="w-full rounded-xl border-2 border-border bg-surface px-4 py-3.5 text-lg text-foreground placeholder:text-muted focus:outline-none focus:border-accent transition-colors"
-            autoFocus
-          />
-
-          <input
-            type="text"
-            placeholder="World code"
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            maxLength={6}
-            className="w-full rounded-xl border-2 border-border bg-surface px-4 py-3.5 text-lg text-foreground placeholder:text-muted uppercase tracking-[0.3em] text-center font-mono font-bold focus:outline-none focus:border-accent transition-colors"
-          />
-
-          {error && (
-            <div className="animate-fade-in rounded-lg bg-danger/10 border border-danger/30 px-4 py-2.5 text-center">
-              <p className="text-danger text-sm font-medium">{error}</p>
-            </div>
-          )}
-
-          <button
-            onClick={handleJoin}
-            disabled={loading}
-            className="w-full rounded-xl bg-accent px-6 py-3.5 text-lg font-bold text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Joining...
-              </>
-            ) : (
-              'Join World'
+            {error && (
+              <div className="animate-fade-in rounded-lg px-4 py-2.5 text-center" style={{ background: 'rgba(201,101,138,.1)', border: '1px solid rgba(201,101,138,.3)' }}>
+                <p className="text-star text-sm font-medium">{error}</p>
+              </div>
             )}
-          </button>
 
-          <button
-            onClick={handleBack}
-            className="text-sm text-muted hover:text-muted-light transition-colors"
-          >
-            Back
-          </button>
+            <button
+              onClick={handleJoin}
+              disabled={loading}
+              className="btn-primary flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Diving in...
+                </>
+              ) : (
+                'Dive In'
+              )}
+            </button>
+
+            <button
+              onClick={handleBack}
+              className="text-[0.8em] mt-1"
+              style={{ color: 'rgba(232,230,240,.25)', background: 'none', border: 'none' }}
+            >
+              &larr; Back
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // --- CREATE: NAME ENTRY ---
+  // --- CREATE: NAME ENTRY (Wading) ---
   if (mode === 'create-name') {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-8 p-6 animate-fade-in">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Create a World</h1>
-          <p className="mt-2 text-muted">Enter your name to get started</p>
-        </div>
+      <div className="bg-depth-wading flex min-h-dvh flex-col items-center justify-center p-6 animate-fade-in">
+        <div className="flex flex-col items-center text-center">
+          <div className="mb-4">
+            <PearlGlobe size={64} animate="float" />
+          </div>
+          <h1 className="font-display text-[1.7em] text-pearl mb-1">What&apos;s your name?</h1>
+          <p className="text-sm mb-6" style={{ color: 'rgba(245,230,202,.45)' }}>
+            This is how other players will see you
+          </p>
+          <div className="flex flex-col gap-3 w-full max-w-[260px]" onKeyDown={handleKeyDown}>
+            <input
+              type="text"
+              placeholder="Your name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={20}
+              className="input-ocean"
+              autoFocus
+            />
 
-        <div className="flex flex-col gap-4 w-full max-w-xs" onKeyDown={handleKeyDown}>
-          <input
-            type="text"
-            placeholder="Your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={20}
-            className="w-full rounded-xl border-2 border-border bg-surface px-4 py-3.5 text-lg text-foreground placeholder:text-muted focus:outline-none focus:border-accent transition-colors"
-            autoFocus
-          />
+            {error && (
+              <div className="animate-fade-in rounded-lg px-4 py-2.5 text-center" style={{ background: 'rgba(201,101,138,.1)', border: '1px solid rgba(201,101,138,.3)' }}>
+                <p className="text-star text-sm font-medium">{error}</p>
+              </div>
+            )}
 
-          {error && (
-            <div className="animate-fade-in rounded-lg bg-danger/10 border border-danger/30 px-4 py-2.5 text-center">
-              <p className="text-danger text-sm font-medium">{error}</p>
-            </div>
-          )}
+            <button
+              onClick={handleNameContinue}
+              className="btn-primary"
+            >
+              Next
+            </button>
 
-          <button
-            onClick={handleNameContinue}
-            className="w-full rounded-xl bg-accent px-6 py-3.5 text-lg font-bold text-white hover:bg-accent-hover active:scale-[0.98] transition-all"
-          >
-            Next
-          </button>
-
-          <button
-            onClick={handleBack}
-            className="text-sm text-muted hover:text-muted-light transition-colors"
-          >
-            Back
-          </button>
+            <button
+              onClick={handleBack}
+              className="text-[0.8em] mt-1"
+              style={{ color: 'rgba(232,230,240,.25)', background: 'none', border: 'none' }}
+            >
+              &larr; Back
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // --- CREATE: GAME SELECTION CAROUSEL ---
+  // --- LOADING (Descent) ---
+  if (mode === 'loading') {
+    const gameName = GAMES.find(g => g.id === selectedGame)?.name ?? '';
+    const gameMax = GAMES.find(g => g.id === selectedGame)?.maxPlayers ?? 4;
+    return (
+      <div className="bg-depth-descent flex min-h-dvh flex-col items-center justify-center p-6 animate-fade-in">
+        <div className="flex flex-col items-center text-center">
+          <div className="mb-5">
+            <PearlGlobe size={56} animate="pulse" />
+          </div>
+          <h1 className="font-display text-[1.3em] text-pearl mb-1">Cracking open your pearl...</h1>
+          <p className="text-[0.78em]" style={{ color: 'rgba(232,230,240,.22)' }}>
+            {gameName} &middot; {gameMax} players
+          </p>
+          <div className="flex gap-1.5 mt-3.5">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: 'rgba(240,194,127,.25)',
+                  animation: `dot-pulse 1.4s ease-in-out infinite ${i * 0.2}s`,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- CREATE: GAME SELECTION (Choosing) ---
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-8 p-6 animate-fade-in">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight">Choose a Game</h1>
-        <p className="mt-2 text-muted">Swipe to browse, tap to select</p>
+    <div className="bg-depth-choosing flex min-h-dvh flex-col items-center justify-center gap-6 p-6 animate-fade-in">
+      <div className="flex flex-col items-center text-center">
+        <div className="mb-3.5">
+          <PearlGlobe size={48} animate="float" />
+        </div>
+        <h1 className="font-display text-[1.5em] text-pearl mb-1">Pick a Pearl</h1>
+        <p className="text-[0.82em] mb-5" style={{ color: 'rgba(245,230,202,.4)' }}>
+          Each game is a treasure. Choose yours.
+        </p>
       </div>
 
-      {/* Horizontal swipeable carousel */}
-      <div className="w-full max-w-md">
+      {/* Pearl cards carousel */}
+      <div className="w-full max-w-[300px]">
         <div
           ref={carouselRef}
-          className="flex gap-4 overflow-x-auto pb-4 px-2 snap-x snap-mandatory scrollbar-hide"
+          className="flex gap-3 overflow-x-auto pb-1 px-1 snap-x snap-mandatory"
           style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {GAMES.map((game) => {
@@ -292,18 +348,28 @@ export default function HomePage() {
               <button
                 key={game.id}
                 onClick={() => setSelectedGame(game.id)}
-                className={`flex-shrink-0 w-[200px] snap-center rounded-2xl border-2 p-6 text-left transition-all ${
-                  isSelected
-                    ? 'border-accent bg-accent/10 shadow-[0_0_20px_rgba(139,92,246,0.2)]'
-                    : 'border-border bg-surface hover:border-border-light hover:bg-surface-light'
-                }`}
+                className="flex-shrink-0 w-[140px] snap-center rounded-2xl p-[18px_14px] text-left transition-all relative"
+                style={{
+                  border: isSelected ? '2px solid var(--pearl)' : '2px solid rgba(255,255,255,.06)',
+                  background: isSelected ? 'rgba(240,194,127,.06)' : 'rgba(255,255,255,.03)',
+                  boxShadow: isSelected ? '0 0 20px rgba(240,194,127,.15)' : 'none',
+                }}
               >
-                <div className="text-4xl mb-3">{game.icon}</div>
-                <h3 className={`text-lg font-bold mb-1 ${isSelected ? 'text-accent' : 'text-foreground'}`}>
-                  {game.name}
-                </h3>
-                <p className="text-sm text-muted mb-3 leading-snug">{game.description}</p>
-                <span className="inline-block text-xs font-semibold text-muted-light bg-surface-lighter rounded-full px-2.5 py-1">
+                <span
+                  className="absolute top-2.5 right-2.5 text-[0.5em] font-bold tracking-[0.5px] rounded-md px-2 py-0.5"
+                  style={{ background: 'rgba(240,194,127,.1)', color: 'var(--pearl)' }}
+                >
+                  ✦ PEARL
+                </span>
+                <div className="text-[1.8em] mb-2">{game.icon}</div>
+                <div className="font-sub text-[0.95em] text-cream mb-0.5">{game.name}</div>
+                <p className="text-[0.68em] leading-snug mb-2" style={{ color: 'rgba(232,230,240,.4)' }}>
+                  {game.description}
+                </p>
+                <span
+                  className="inline-block text-[0.6em] font-bold rounded-md px-2 py-[3px]"
+                  style={{ background: 'rgba(126,184,212,.1)', color: 'var(--shallow-water)' }}
+                >
                   {game.maxPlayers} players
                 </span>
               </button>
@@ -313,37 +379,56 @@ export default function HomePage() {
       </div>
 
       {error && (
-        <div className="animate-fade-in rounded-lg bg-danger/10 border border-danger/30 px-4 py-2.5 text-center max-w-xs w-full">
-          <p className="text-danger text-sm font-medium">{error}</p>
+        <div className="animate-fade-in rounded-lg px-4 py-2.5 text-center max-w-[300px] w-full" style={{ background: 'rgba(201,101,138,.1)', border: '1px solid rgba(201,101,138,.3)' }}>
+          <p className="text-star text-sm font-medium">{error}</p>
         </div>
       )}
 
-      <div className="flex flex-col gap-3 w-full max-w-xs" onKeyDown={handleKeyDown}>
+      <div className="flex flex-col gap-3 w-full max-w-[300px]" onKeyDown={handleKeyDown}>
         <button
           onClick={handleCreate}
           disabled={!selectedGame || loading}
-          className="w-full rounded-xl bg-accent px-6 py-3.5 text-lg font-bold text-white hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          className="btn-primary flex items-center justify-center gap-2"
         >
-          {loading ? (
-            <>
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Creating...
-            </>
-          ) : (
-            'Create'
-          )}
+          Crack It Open
         </button>
 
         <button
           onClick={handleBack}
-          className="text-sm text-muted hover:text-muted-light transition-colors"
+          className="text-[0.8em] mt-1"
+          style={{ color: 'rgba(232,230,240,.25)', background: 'none', border: 'none' }}
         >
-          Back
+          &larr; Back
         </button>
       </div>
     </div>
   );
+}
+
+// Bubble effect for Surface screen
+function Bubbles() {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    for (let i = 0; i < 10; i++) {
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      const s = Math.random() * 14 + 3;
+      b.style.width = `${s}px`;
+      b.style.height = `${s}px`;
+      b.style.left = `${Math.random() * 100}%`;
+      b.style.animationDuration = `${Math.random() * 12 + 6}s`;
+      b.style.animationDelay = `${Math.random() * 8}s`;
+      container.appendChild(b);
+    }
+    return () => {
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+    };
+  }, []);
+
+  return <div ref={containerRef} className="absolute inset-0 pointer-events-none overflow-hidden" />;
 }

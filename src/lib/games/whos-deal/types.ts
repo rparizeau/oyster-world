@@ -72,6 +72,9 @@ export interface WhosDealGameState {
   // Result
   winningTeam: 'a' | 'b' | null;
 
+  // Round counter
+  roundsPlayed: number;
+
   // Timing (serverless-safe)
   botActionAt: number | null;
   phaseEndsAt: number | null;

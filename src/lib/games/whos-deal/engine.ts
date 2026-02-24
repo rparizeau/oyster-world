@@ -159,6 +159,7 @@ function initialize(players: Player[], settings?: Record<string, unknown>): Whos
     targetScore,
     dealerSeatIndex: 0,
     round: null,
+    roundsPlayed: 1,
     phase: 'playing',
     winningTeam: null,
     botActionAt: null,
@@ -603,6 +604,7 @@ function handlePlayAgain(state: WhosDealGameState): WhosDealGameState {
       b: { ...state.teams.b, score: 0 },
     },
     dealerSeatIndex: 0,
+    roundsPlayed: 1,
     phase: 'playing',
     winningTeam: null,
     round: null,
@@ -664,6 +666,7 @@ export function advanceToNextRound(state: WhosDealGameState, players: Player[]):
   const newState = dealRound({
     ...state,
     dealerSeatIndex: (state.dealerSeatIndex + 1) % 4,
+    roundsPlayed: state.roundsPlayed + 1,
     round: null,
   });
 

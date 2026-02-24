@@ -13,7 +13,7 @@ export interface Room {
   gameId: string;            // From GAME_REGISTRY (e.g., 'terrible-people', '4-kate')
 
   // Players (ordered by join time)
-  players: Player[];         // Length varies by game (2 for 4 Kate, 4 for Terrible People)
+  players: Player[];         // Length varies by game (2 for Take 4, 4 for Terrible People)
 
   // Game-specific lobby settings (optional, used by games like Who's Deal?)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

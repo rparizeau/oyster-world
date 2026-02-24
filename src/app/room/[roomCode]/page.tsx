@@ -11,6 +11,13 @@ import type { Card as WDCard, Suit as WDSuit, TrickCard as WDTrickCard } from '@
 import WhosDealGameView from '@/lib/games/whos-deal/components/WhosDealGameView';
 import type { ClientWhosDealState } from '@/lib/games/whos-deal/components/WhosDealGameView';
 import { TRICK_RESULT_DISPLAY_MS } from '@/lib/games/whos-deal/constants';
+import DeepBar from '@/components/DeepBar';
+
+const GAME_DISPLAY_NAMES: Record<string, string> = {
+  'terrible-people': 'Terrible People',
+  '4-kate': 'Take 4',
+  'whos-deal': "Who's Deal?",
+};
 
 // Sanitized game state from the server (no hands, no decks)
 interface SanitizedGameState {
@@ -184,7 +191,7 @@ export default function RoomPage() {
         updated[idx] = data.player;
         return { ...prev, players: updated };
       });
-      addToast(`${data.player.name} joined the world`, 'info');
+      addToast(`${data.player.name} joined the game`, 'info');
     });
 
     channel.bind('player-left', (data: { playerId: string; newOwnerId?: string; replacementBot: Player }) => {
@@ -192,7 +199,7 @@ export default function RoomPage() {
         if (!prev) return prev;
         const leavingPlayer = prev.players.find((p) => p.id === data.playerId);
         if (leavingPlayer) {
-          addToast(`${leavingPlayer.name} left the world`, 'warning');
+          addToast(`${leavingPlayer.name} left the game`, 'warning');
         }
         const idx = prev.players.findIndex((p) => p.id === data.playerId);
         if (idx === -1) return prev;
@@ -297,6 +304,7 @@ export default function RoomPage() {
             seats: data.seats,
             targetScore: data.targetScore ?? 10,
             dealerSeatIndex: data.dealer ?? 0,
+            roundsPlayed: 1,
             phase: 'playing',
             winningTeam: null,
             round: {
@@ -722,6 +730,7 @@ export default function RoomPage() {
         return {
           ...prev,
           dealerSeatIndex: data.dealerSeatIndex,
+          roundsPlayed: (prev.roundsPlayed ?? 1) + 1,
           round: {
             trumpPhase: 'round1' as const,
             trumpSuit: null,
@@ -1150,10 +1159,10 @@ export default function RoomPage() {
             </svg>
           </div>
           <p className="text-lg font-semibold text-foreground mb-1">{error}</p>
-          <p className="text-sm text-muted mb-6">Something went wrong with this world.</p>
+          <p className="text-sm text-muted mb-6">Something went wrong with this game.</p>
           <button
             onClick={() => router.push('/')}
-            className="w-full rounded-xl bg-accent px-6 py-3 font-bold text-white hover:bg-accent-hover active:scale-[0.98] transition-all"
+            className="btn-primary w-full"
           >
             Return Home
           </button>
@@ -1168,99 +1177,168 @@ export default function RoomPage() {
 
   // Who's Deal? game view
   if (room.status === 'playing' && whosDealState && room.gameId === 'whos-deal') {
+    const myTeam = whosDealState.teams.a.playerIds.includes(playerId ?? '') ? 'a' : 'b';
     return (
-      <>
+      <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
         <ToastContainer toasts={toasts} />
         <ConnectionBanner status={connectionStatus} />
-        <WhosDealGameView
-          room={room}
-          gameState={whosDealState}
-          playerId={playerId}
-          isOwner={isOwner}
-          leaving={leaving}
-          trickWinner={wdTrickWinner}
-          roundSummary={wdRoundSummary}
-          onCallTrump={handleWDCallTrump}
-          onPassTrump={handleWDPassTrump}
-          onDiscard={handleWDDiscard}
-          onPlayCard={handleWDPlayCard}
-          onPlayAgain={handleWDPlayAgain}
-          onLeave={handleLeave}
+        <DeepBar
+          gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+          actionLabel="Lobby"
+          showAction={true}
+          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
+          onAction={() => {/* Placeholder — persistent lobby is Update 2 */}}
         />
-      </>
+        <ScoreBar
+          teams={whosDealState.teams}
+          targetScore={whosDealState.targetScore}
+          myTeam={myTeam}
+        />
+        <div className="flex-1">
+          <WhosDealGameView
+            room={room}
+            gameState={whosDealState}
+            playerId={playerId}
+            isOwner={isOwner}
+            leaving={leaving}
+            trickWinner={wdTrickWinner}
+            roundSummary={wdRoundSummary}
+            onCallTrump={handleWDCallTrump}
+            onPassTrump={handleWDPassTrump}
+            onDiscard={handleWDDiscard}
+            onPlayCard={handleWDPlayCard}
+            onPlayAgain={handleWDPlayAgain}
+            onLeave={handleLeave}
+          />
+        </div>
+      </div>
     );
   }
 
   // 4 Kate game view
   if (room.status === 'playing' && fourKateState && room.gameId === '4-kate') {
     return (
-      <>
+      <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
         <ToastContainer toasts={toasts} />
         <ConnectionBanner status={connectionStatus} />
-        <FourKateGameView
-          room={room}
-          gameState={fourKateState}
-          playerId={playerId}
-          isOwner={isOwner}
-          leaving={leaving}
-          onDropPiece={handleDropPiece}
-          onPlayAgain={handlePlayAgain}
-          onLeave={handleLeave}
+        <DeepBar
+          gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+          actionLabel="Lobby"
+          showAction={true}
+          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
+          onAction={() => {/* Placeholder — persistent lobby is Update 2 */}}
         />
-      </>
+        <div className="flex-1">
+          <FourKateGameView
+            room={room}
+            gameState={fourKateState}
+            playerId={playerId}
+            isOwner={isOwner}
+            leaving={leaving}
+            onDropPiece={handleDropPiece}
+            onPlayAgain={handlePlayAgain}
+            onLeave={handleLeave}
+          />
+        </div>
+      </div>
     );
   }
 
   // Terrible People game view
   if (room.status === 'playing' && gameState) {
     return (
-      <>
+      <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
         <ToastContainer toasts={toasts} />
         <ConnectionBanner status={connectionStatus} />
-        <GameView
-          room={room}
-          gameState={gameState}
-          playerId={playerId}
-          isOwner={isOwner}
-          isCzar={playerId === room.players[gameState.czarIndex]?.id}
-          hand={hand}
-          selectedCards={selectedCards}
-          hasSubmitted={hasSubmitted}
-          submitting={submitting}
-          judging={judging}
-          revealedSubmissions={revealedSubmissions}
-          roundResult={roundResult}
-          gameOver={gameOver}
-          leaving={leaving}
-          phaseKey={phaseKey}
-          onToggleCard={toggleCardSelection}
-          onSubmit={handleSubmitCards}
-          onJudge={handleJudge}
-          onPlayAgain={handlePlayAgain}
-          onLeave={handleLeave}
+        <DeepBar
+          gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+          actionLabel="Lobby"
+          showAction={true}
+          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
+          onAction={() => {/* Placeholder — persistent lobby is Update 2 */}}
         />
-      </>
+        <div className="flex-1">
+          <GameView
+            room={room}
+            gameState={gameState}
+            playerId={playerId}
+            isOwner={isOwner}
+            isCzar={playerId === room.players[gameState.czarIndex]?.id}
+            hand={hand}
+            selectedCards={selectedCards}
+            hasSubmitted={hasSubmitted}
+            submitting={submitting}
+            judging={judging}
+            revealedSubmissions={revealedSubmissions}
+            roundResult={roundResult}
+            gameOver={gameOver}
+            leaving={leaving}
+            phaseKey={phaseKey}
+            onToggleCard={toggleCardSelection}
+            onSubmit={handleSubmitCards}
+            onJudge={handleJudge}
+            onPlayAgain={handlePlayAgain}
+            onLeave={handleLeave}
+          />
+        </div>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
       <ToastContainer toasts={toasts} />
       <ConnectionBanner status={connectionStatus} />
-      <LobbyView
-        room={room}
-        playerId={playerId}
-        isOwner={isOwner}
-        starting={starting}
-        leaving={leaving}
-        copied={copied}
-        onCopy={handleCopy}
-        onStartGame={handleStartGame}
-        onLeave={handleLeave}
-        onSwapTeams={handleSwapTeams}
-        onSetTargetScore={handleSetTargetScore}
+      <DeepBar
+        gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+        actionLabel="Leave"
+        showAction={false}
+        onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
       />
-    </>
+      <div className="flex-1">
+        <LobbyView
+          room={room}
+          playerId={playerId}
+          isOwner={isOwner}
+          starting={starting}
+          leaving={leaving}
+          copied={copied}
+          onCopy={handleCopy}
+          onStartGame={handleStartGame}
+          onLeave={handleLeave}
+          onSwapTeams={handleSwapTeams}
+          onSetTargetScore={handleSetTargetScore}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ====================
+// SCORE BAR (Who's Deal? only)
+// ====================
+function ScoreBar({ teams, targetScore, myTeam }: {
+  teams: { a: { score: number; playerIds: [string, string] }; b: { score: number; playerIds: [string, string] } };
+  targetScore: number;
+  myTeam: 'a' | 'b';
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 px-4 py-2.5 text-[0.8em] font-bold" style={{ background: 'rgba(240,194,127,.04)', borderBottom: '1px solid rgba(240,194,127,.06)' }}>
+      <span style={{ color: 'var(--shallow-water)' }}>
+        ● A {teams.a.score}
+        {myTeam === 'a' && (
+          <span className="text-[0.55em] ml-1 font-bold rounded-[3px] px-1.5 py-[1px]" style={{ background: 'rgba(240,194,127,.1)', color: 'var(--pearl)' }}>YOU</span>
+        )}
+      </span>
+      <span className="text-[0.7em]" style={{ color: 'rgba(232,230,240,.15)' }}>vs</span>
+      <span style={{ color: 'var(--coral)' }}>
+        ● B {teams.b.score}
+        {myTeam === 'b' && (
+          <span className="text-[0.55em] ml-1 font-bold rounded-[3px] px-1.5 py-[1px]" style={{ background: 'rgba(240,194,127,.1)', color: 'var(--pearl)' }}>YOU</span>
+        )}
+      </span>
+      <span className="text-[0.65em] font-semibold ml-auto" style={{ color: 'rgba(232,230,240,.12)' }}>to {targetScore}</span>
+    </div>
   );
 }
 
@@ -1351,44 +1429,25 @@ function LobbyView({
   const targetScore = (room.settings?.targetScore as number) || 10;
 
   return (
-    <div className="flex min-h-dvh flex-col items-center gap-8 p-6 pt-12 animate-fade-in">
-      {/* Game indicator */}
-      {room.gameId && (
-        <div className="flex items-center gap-2 rounded-xl bg-surface-light border border-border px-4 py-2">
-          <span className="text-2xl">{room.gameId === 'terrible-people' ? '😈' : room.gameId === '4-kate' ? '🔴' : room.gameId === 'whos-deal' ? '🃏' : ''}</span>
-          <span className="text-sm font-semibold text-foreground">{room.gameId === 'terrible-people' ? 'Terrible People' : room.gameId === '4-kate' ? '4 Kate' : room.gameId === 'whos-deal' ? "Who's Deal?" : room.gameId}</span>
+    <div className="flex flex-col items-center gap-6 p-4 pt-4 pb-6 animate-fade-in">
+      {/* Game code section */}
+      <div className="text-center pt-2 pb-4">
+        <div className="text-[0.62em] uppercase tracking-[3px] font-bold mb-1" style={{ color: 'rgba(240,194,127,.35)' }}>
+          Game Code
         </div>
-      )}
-
-      {/* World code header */}
-      <div className="text-center">
-        <p className="text-xs text-muted uppercase tracking-[0.2em] font-semibold mb-1">World Code</p>
         <button
           onClick={() => onCopy('code')}
-          className="group relative text-5xl font-mono font-black tracking-[0.15em] text-foreground hover:text-accent transition-colors"
-          title="Copy world code"
+          className="group relative font-display text-[2.2em] text-cream tracking-[6px] hover:text-pearl transition-colors"
+          title="Copy game code"
         >
           {room.roomCode}
-          <span className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-            {copied === 'code' ? (
-              <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            )}
-          </span>
         </button>
         <button
           onClick={() => onCopy('link')}
-          className="mt-2 flex items-center gap-1.5 mx-auto text-sm text-muted hover:text-accent transition-colors"
+          className="mt-1.5 flex items-center gap-1 mx-auto text-sm font-semibold transition-colors"
+          style={{ color: 'var(--shallow-water)' }}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-          </svg>
-          {copied === 'link' ? 'Link copied!' : 'Copy invite link'}
+          {copied === 'link' ? '✓ Link copied!' : copied === 'code' ? '✓ Code copied!' : '🔗 Copy invite link'}
         </button>
       </div>
 
@@ -1405,8 +1464,8 @@ function LobbyView({
         /* Standard player list for other games */
         <div className="w-full max-w-sm">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs text-muted uppercase tracking-[0.15em] font-semibold">Players</h2>
-            <span className="text-xs text-muted">{humanCount}/{room.players.length} humans</span>
+            <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold" style={{ color: 'rgba(232,230,240,.25)' }}>Players</h2>
+            <span className="text-[0.65em] font-bold" style={{ color: 'rgba(232,230,240,.25)' }}>{humanCount}/{room.players.length} humans</span>
           </div>
           <div className="flex flex-col gap-2">
             {room.players.map((player, i) => (
@@ -1419,20 +1478,18 @@ function LobbyView({
       {/* Who's Deal? Target Score Selector */}
       {isWhosDeal && (
         <div className="w-full max-w-sm">
-          <h2 className="text-xs text-muted uppercase tracking-[0.15em] font-semibold mb-3">Points to Win</h2>
-          <div className="flex gap-2">
+          <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold mb-3" style={{ color: 'rgba(232,230,240,.25)' }}>Points to Win</h2>
+          <div className="flex gap-1.5">
             {[5, 7, 10, 11].map((score) => (
               <button
                 key={score}
                 onClick={() => isOwner && onSetTargetScore(score)}
                 disabled={!isOwner}
-                className={`flex-1 rounded-xl py-3 text-lg font-bold transition-all ${
-                  targetScore === score
-                    ? 'bg-accent text-white shadow-[0_0_12px_rgba(139,92,246,0.3)]'
-                    : isOwner
-                      ? 'bg-surface border border-border text-foreground hover:border-border-light hover:bg-surface-light'
-                      : 'bg-surface border border-border text-muted cursor-default'
-                }`}
+                className="flex-1 rounded-lg py-2.5 text-lg font-bold transition-all"
+                style={targetScore === score
+                  ? { border: '2px solid var(--pearl)', background: 'rgba(240,194,127,.06)', color: 'var(--pearl)' }
+                  : { border: '2px solid rgba(255,255,255,.05)', background: 'rgba(255,255,255,.02)', color: 'rgba(232,230,240,.35)' }
+                }
               >
                 {score}
               </button>
@@ -1442,12 +1499,12 @@ function LobbyView({
       )}
 
       {/* Actions */}
-      <div className="flex flex-col gap-3 w-full max-w-sm">
-        {isOwner && (
+      <div className="flex flex-col gap-2 w-full max-w-sm">
+        {isOwner ? (
           <button
             onClick={onStartGame}
             disabled={starting}
-            className="w-full rounded-xl bg-accent px-6 py-4 text-lg font-bold text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            className="btn-primary flex items-center justify-center gap-2 text-lg"
           >
             {starting ? (
               <>
@@ -1461,18 +1518,31 @@ function LobbyView({
               'Start Game'
             )}
           </button>
+        ) : (
+          <div className="text-center py-4">
+            <p className="text-[0.88em] font-semibold" style={{ color: 'rgba(232,230,240,.3)' }}>Waiting for host to start...</p>
+            <div className="flex gap-1.5 justify-center mt-2.5">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: 'rgba(240,194,127,.25)', animation: `dot-pulse 1.4s ease-in-out infinite ${i * 0.2}s` }}
+                />
+              ))}
+            </div>
+          </div>
         )}
         <button
           onClick={onLeave}
           disabled={leaving}
-          className="w-full rounded-xl border border-danger/30 px-6 py-3 font-semibold text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98] transition-all"
+          className="btn-danger"
         >
-          {leaving ? 'Leaving...' : 'Leave World'}
+          {leaving ? 'Leaving...' : 'Leave Game'}
         </button>
       </div>
 
-      <p className="text-sm text-muted text-center">
-        Share the world code to invite friends
+      <p className="text-[0.68em] text-center" style={{ color: 'rgba(232,230,240,.18)' }}>
+        Share the code — the more the merrier
       </p>
     </div>
   );
@@ -1484,42 +1554,40 @@ function LobbyView({
 function PlayerCard({ player, isOwnerPlayer, index }: { player: Player; isOwnerPlayer: boolean; index: number }) {
   return (
     <div
-      className={`flex items-center justify-between rounded-xl px-4 py-3.5 transition-all animate-fade-in ${
-        player.isBot
-          ? 'bg-surface border border-dashed border-border'
-          : 'bg-surface-light border border-border-light'
-      } ${!player.isConnected && !player.isBot ? 'opacity-40' : ''}`}
-      style={{ animationDelay: `${index * 50}ms` }}
+      className={`flex items-center gap-2 rounded-[10px] px-2.5 py-2.5 transition-all animate-fade-in ${
+        !player.isConnected && !player.isBot ? 'opacity-40' : ''
+      } ${player.isBot ? 'opacity-45' : ''}`}
+      style={{
+        animationDelay: `${index * 50}ms`,
+        background: 'rgba(126,184,212,.05)',
+        border: '1.5px solid rgba(126,184,212,.1)',
+      }}
     >
-      <div className="flex items-center gap-3 min-w-0">
-        {player.isBot ? (
-          <div className="w-9 h-9 rounded-full bg-surface-lighter flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-        ) : (
-          <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0 text-accent font-bold text-sm">
-            {player.name.charAt(0).toUpperCase()}
-          </div>
-        )}
-        <div className="min-w-0">
-          <span className={`font-semibold text-sm truncate block max-w-[140px] ${
-            player.isBot ? 'text-muted' : 'text-foreground'
-          }`}>
-            {player.name}
-          </span>
-          {isOwnerPlayer && (
-            <span className="text-[10px] text-accent font-semibold uppercase tracking-wider">Owner</span>
-          )}
-          {!player.isConnected && !player.isBot && (
-            <span className="text-[10px] text-danger font-semibold uppercase tracking-wider">Disconnected</span>
-          )}
+      {player.isBot ? (
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-[0.7em] font-bold text-white" style={{ background: 'rgba(255,255,255,.06)' }}>
+          🤖
         </div>
-      </div>
-      {player.isBot && (
-        <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">Bot</span>
+      ) : (
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-[0.7em] font-bold text-white" style={{ background: 'rgba(126,184,212,.2)' }}>
+          {player.name.charAt(0).toUpperCase()}
+        </div>
       )}
+      <div className="min-w-0 flex-1">
+        <span className={`font-bold text-[0.82em] truncate block ${
+          player.isBot ? 'text-cream/60' : 'text-cream'
+        }`}>
+          {player.name}
+        </span>
+        {isOwnerPlayer && (
+          <span className="text-[0.55em] uppercase tracking-[1px] font-bold" style={{ color: 'var(--pearl)' }}>OWNER</span>
+        )}
+        {player.isBot && !isOwnerPlayer && (
+          <span className="text-[0.55em] uppercase tracking-[1px] font-bold" style={{ color: 'rgba(232,230,240,.2)' }}>BOT</span>
+        )}
+        {!player.isConnected && !player.isBot && (
+          <span className="text-[0.55em] uppercase tracking-[1px] font-bold text-danger">DISCONNECTED</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -1578,49 +1646,47 @@ function WhosDealTeamAssignment({
 
   return (
     <div className="w-full max-w-sm">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xs text-muted uppercase tracking-[0.15em] font-semibold">Teams</h2>
-        <span className="text-xs text-muted">{humanCount}/{room.players.length} humans</span>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold" style={{ color: 'rgba(232,230,240,.25)' }}>Teams</h2>
+        <span className="text-[0.65em] font-bold" style={{ color: 'rgba(232,230,240,.25)' }}>{humanCount}/{room.players.length} humans</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2">
         {/* Team A */}
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-3 h-3 rounded-full bg-blue-500" />
-            <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Team A</span>
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-[7px] h-[7px] rounded-full" style={{ background: 'var(--shallow-water)' }} />
+            <span className="text-[0.7em] font-bold" style={{ color: 'var(--shallow-water)' }}>Team A</span>
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             {teamAPlayers.map((player) => (
               <button
                 key={player.id}
                 onClick={() => handleSelectA(player.id)}
                 disabled={!isOwner}
-                className={`flex items-center gap-2.5 rounded-xl px-3 py-3 transition-all text-left w-full ${
-                  selectedA === player.id
-                    ? 'bg-blue-500/20 border-2 border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
-                    : player.isBot
-                      ? 'bg-surface border border-dashed border-blue-500/30'
-                      : 'bg-surface-light border border-blue-500/30'
-                } ${isOwner ? 'cursor-pointer hover:border-blue-500/60' : 'cursor-default'} ${!player.isConnected && !player.isBot ? 'opacity-40' : ''}`}
+                className={`flex items-center gap-2 rounded-[10px] px-2.5 py-2.5 transition-all text-left w-full ${
+                  isOwner ? 'cursor-pointer' : 'cursor-default'
+                } ${!player.isConnected && !player.isBot ? 'opacity-40' : ''} ${player.isBot ? 'opacity-45' : ''}`}
+                style={selectedA === player.id
+                  ? { background: 'rgba(126,184,212,.15)', border: '2px solid var(--shallow-water)', boxShadow: '0 0 10px rgba(126,184,212,.2)' }
+                  : player.isBot
+                    ? { background: 'rgba(126,184,212,.03)', border: '1.5px dashed rgba(126,184,212,.1)' }
+                    : { background: 'rgba(126,184,212,.05)', border: '1.5px solid rgba(126,184,212,.1)' }
+                }
               >
                 {player.isBot ? (
-                  <div className="w-8 h-8 rounded-full bg-surface-lighter flex items-center justify-center flex-shrink-0">
-                    <svg className="w-3.5 h-3.5 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </div>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-[0.7em]" style={{ background: 'rgba(255,255,255,.06)' }}>🤖</div>
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 text-blue-400 font-bold text-xs">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-[0.7em] font-bold text-white" style={{ background: 'rgba(126,184,212,.2)' }}>
                     {player.name.charAt(0).toUpperCase()}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <span className={`font-semibold text-sm truncate block ${player.isBot ? 'text-muted' : 'text-foreground'}`}>
+                  <span className={`font-bold text-[0.82em] truncate block ${player.isBot ? 'text-cream/60' : 'text-cream'}`}>
                     {player.name}
                   </span>
-                  {player.isBot && <span className="text-[9px] text-muted uppercase tracking-wider">Bot</span>}
-                  {player.id === room.ownerId && <span className="text-[9px] text-accent uppercase tracking-wider font-semibold">Owner</span>}
+                  {player.isBot && <span className="text-[0.55em] uppercase tracking-[1px] font-bold" style={{ color: 'rgba(232,230,240,.2)' }}>BOT</span>}
+                  {player.id === room.ownerId && <span className="text-[0.55em] uppercase tracking-[1px] font-bold" style={{ color: 'var(--pearl)' }}>OWNER</span>}
                 </div>
               </button>
             ))}
@@ -1629,41 +1695,39 @@ function WhosDealTeamAssignment({
 
         {/* Team B */}
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-3 h-3 rounded-full bg-orange-500" />
-            <span className="text-xs font-bold text-orange-400 uppercase tracking-wider">Team B</span>
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-[7px] h-[7px] rounded-full" style={{ background: 'var(--coral)' }} />
+            <span className="text-[0.7em] font-bold" style={{ color: 'var(--coral)' }}>Team B</span>
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             {teamBPlayers.map((player) => (
               <button
                 key={player.id}
                 onClick={() => handleSelectB(player.id)}
                 disabled={!isOwner}
-                className={`flex items-center gap-2.5 rounded-xl px-3 py-3 transition-all text-left w-full ${
-                  selectedB === player.id
-                    ? 'bg-orange-500/20 border-2 border-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.2)]'
-                    : player.isBot
-                      ? 'bg-surface border border-dashed border-orange-500/30'
-                      : 'bg-surface-light border border-orange-500/30'
-                } ${isOwner ? 'cursor-pointer hover:border-orange-500/60' : 'cursor-default'} ${!player.isConnected && !player.isBot ? 'opacity-40' : ''}`}
+                className={`flex items-center gap-2 rounded-[10px] px-2.5 py-2.5 transition-all text-left w-full ${
+                  isOwner ? 'cursor-pointer' : 'cursor-default'
+                } ${!player.isConnected && !player.isBot ? 'opacity-40' : ''} ${player.isBot ? 'opacity-45' : ''}`}
+                style={selectedB === player.id
+                  ? { background: 'rgba(232,168,124,.15)', border: '2px solid var(--coral)', boxShadow: '0 0 10px rgba(232,168,124,.2)' }
+                  : player.isBot
+                    ? { background: 'rgba(232,168,124,.03)', border: '1.5px dashed rgba(232,168,124,.1)' }
+                    : { background: 'rgba(232,168,124,.05)', border: '1.5px solid rgba(232,168,124,.1)' }
+                }
               >
                 {player.isBot ? (
-                  <div className="w-8 h-8 rounded-full bg-surface-lighter flex items-center justify-center flex-shrink-0">
-                    <svg className="w-3.5 h-3.5 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </div>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-[0.7em]" style={{ background: 'rgba(255,255,255,.06)' }}>🤖</div>
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0 text-orange-400 font-bold text-xs">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-[0.7em] font-bold text-white" style={{ background: 'rgba(232,168,124,.2)' }}>
                     {player.name.charAt(0).toUpperCase()}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <span className={`font-semibold text-sm truncate block ${player.isBot ? 'text-muted' : 'text-foreground'}`}>
+                  <span className={`font-bold text-[0.82em] truncate block ${player.isBot ? 'text-cream/60' : 'text-cream'}`}>
                     {player.name}
                   </span>
-                  {player.isBot && <span className="text-[9px] text-muted uppercase tracking-wider">Bot</span>}
-                  {player.id === room.ownerId && <span className="text-[9px] text-accent uppercase tracking-wider font-semibold">Owner</span>}
+                  {player.isBot && <span className="text-[0.55em] uppercase tracking-[1px] font-bold" style={{ color: 'rgba(232,230,240,.2)' }}>BOT</span>}
+                  {player.id === room.ownerId && <span className="text-[0.55em] uppercase tracking-[1px] font-bold" style={{ color: 'var(--pearl)' }}>OWNER</span>}
                 </div>
               </button>
             ))}
@@ -1672,7 +1736,7 @@ function WhosDealTeamAssignment({
       </div>
 
       {isOwner && (
-        <p className="text-xs text-muted text-center mt-3">
+        <p className="text-[0.65em] text-center mt-2.5" style={{ color: 'rgba(232,230,240,.18)' }}>
           Tap one player from each team to swap them
         </p>
       )}
@@ -1748,7 +1812,7 @@ function GameView({
   const submittedCount = Object.keys(gameState.submissions).length;
 
   return (
-    <div className="flex min-h-dvh flex-col p-4 pb-6 max-w-lg mx-auto w-full">
+    <div className="flex flex-1 flex-col p-4 pb-6 max-w-lg mx-auto w-full">
       {/* Top bar */}
       <div className="flex items-center justify-between mb-3 animate-fade-in">
         <div className="flex items-center gap-2">
@@ -1768,16 +1832,15 @@ function GameView({
           <div
             key={p.id}
             className={`flex-shrink-0 flex flex-col items-center px-3 py-2 rounded-xl border transition-all ${
-              i === gameState.czarIndex
-                ? 'border-warning bg-warning/10 shadow-[0_0_10px_rgba(245,158,11,0.15)]'
-                : p.id === playerId
-                  ? 'border-accent/50 bg-accent/5'
-                  : 'border-border bg-surface'
+              p.id === playerId && i !== gameState.czarIndex
+                ? 'border-accent/50 bg-accent/5'
+                : 'border-border bg-surface'
             }`}
+            style={i === gameState.czarIndex ? { borderColor: 'var(--pearl)', background: 'rgba(240,194,127,.08)', boxShadow: '0 0 10px rgba(240,194,127,0.15)' } : undefined}
           >
             <div className="flex items-center gap-1">
               {i === gameState.czarIndex && (
-                <svg className="w-3.5 h-3.5 text-warning" viewBox="0 0 24 24" fill="currentColor">
+                <svg className="w-3.5 h-3.5" style={{ color: 'var(--pearl)' }} viewBox="0 0 24 24" fill="currentColor">
                   <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z" />
                   <path d="M5 19a1 1 0 001 1h12a1 1 0 001-1v-1H5v1z" />
                 </svg>
@@ -1808,12 +1871,12 @@ function GameView({
         {phase === 'czar_reveal' && (
           <div className="text-center py-8">
             <div className="inline-flex items-center gap-2 mb-3">
-              <svg className="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="currentColor">
+              <svg className="w-5 h-5" style={{ color: 'var(--pearl)' }} viewBox="0 0 24 24" fill="currentColor">
                 <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z" />
                 <path d="M5 19a1 1 0 001 1h12a1 1 0 001-1v-1H5v1z" />
               </svg>
-              <p className="text-foreground text-lg font-semibold">
-                {czar?.name} is the Card Czar
+              <p className="text-cream text-lg font-semibold">
+                {czar?.name} is The Crown
               </p>
             </div>
             <p className="text-muted text-sm animate-pulse-soft">Reading the prompt...</p>
@@ -1823,7 +1886,7 @@ function GameView({
         {phase === 'submitting' && (
           <SubmittingPhase
             isCzar={isCzar}
-            czarName={czar?.name ?? 'Czar'}
+            czarName={czar?.name ?? 'The Crown'}
             hand={hand}
             selectedCards={selectedCards}
             hasSubmitted={hasSubmitted}
@@ -1839,7 +1902,7 @@ function GameView({
         {phase === 'judging' && (
           <JudgingPhase
             isCzar={isCzar}
-            czarName={czar?.name ?? 'Czar'}
+            czarName={czar?.name ?? 'The Crown'}
             revealedSubmissions={revealedSubmissions}
             judging={judging}
             onJudge={onJudge}
@@ -1861,7 +1924,7 @@ function GameView({
           disabled={leaving}
           className="w-full text-xs text-muted hover:text-danger transition-colors py-2"
         >
-          {leaving ? 'Leaving...' : 'Leave World'}
+          {leaving ? 'Leaving...' : 'Leave Game'}
         </button>
       </div>
     </div>
@@ -1961,7 +2024,7 @@ function SubmittingPhase({
               onClick={() => onToggleCard(card.id)}
               className={`card-white text-left w-[160px] md:w-auto min-h-[100px] border-2 transition-all ${
                 isSelected
-                  ? 'border-accent shadow-[0_0_12px_rgba(139,92,246,0.3)] !transform-none'
+                  ? 'border-accent shadow-[0_0_12px_rgba(240,194,127,0.3)] !transform-none'
                   : 'border-transparent hover:border-border-light'
               }`}
               style={{ animationDelay: `${i * 40}ms` }}
@@ -1981,7 +2044,7 @@ function SubmittingPhase({
       <button
         onClick={onSubmit}
         disabled={selectedCards.length !== pick || submitting}
-        className="w-full rounded-xl bg-accent px-6 py-3.5 font-bold text-white hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+        className="w-full rounded-xl bg-accent px-6 py-3.5 font-bold text-[#080c1a] hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
       >
         {submitting ? (
           <>
@@ -2029,7 +2092,7 @@ function JudgingPhase({
             disabled={!isCzar || judging}
             className={`card-white text-left !p-4 border-2 animate-fade-in-up ${
               isCzar && !judging
-                ? 'border-transparent hover:border-warning hover:shadow-[0_0_12px_rgba(245,158,11,0.2)] cursor-pointer'
+                ? 'border-transparent hover:border-accent hover:shadow-[0_0_12px_rgba(240,194,127,0.2)] cursor-pointer'
                 : 'border-transparent cursor-default !transform-none'
             }`}
             style={{ animationDelay: `${i * 100}ms` }}
@@ -2069,7 +2132,7 @@ function RoundResultPhase({
       <p className="text-2xl font-black text-foreground mb-4 animate-bounce-in">
         {winnerName}
       </p>
-      <div className="card-white inline-block !p-5 border-2 border-success shadow-[0_0_20px_rgba(34,197,94,0.2)] animate-winner-reveal">
+      <div className="card-white inline-block !p-5 border-2 border-success shadow-[0_0_20px_rgba(107,191,163,0.2)] animate-winner-reveal">
         {submission.map((card, i) => (
           <span key={card.id} className="text-card-white-text text-lg">
             {i > 0 && <span className="text-muted mx-1">&</span>}
@@ -2112,11 +2175,11 @@ function GameOverView({
   );
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 p-6 animate-fade-in">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 animate-fade-in">
       {/* Trophy */}
       <div className="animate-bounce-in">
-        <div className="w-20 h-20 rounded-full bg-warning/20 flex items-center justify-center">
-          <svg className="w-10 h-10 text-warning" viewBox="0 0 24 24" fill="currentColor">
+        <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: 'rgba(240,194,127,.15)' }}>
+          <svg className="w-10 h-10" style={{ color: 'var(--pearl)' }} viewBox="0 0 24 24" fill="currentColor">
             <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z" />
             <path d="M5 19a1 1 0 001 1h12a1 1 0 001-1v-1H5v1z" />
           </svg>
@@ -2124,13 +2187,13 @@ function GameOverView({
       </div>
 
       <div className="text-center">
-        <h1 className="text-3xl font-black tracking-tight">Game Over!</h1>
+        <h1 className="font-display text-3xl font-black tracking-tight text-cream">Game Over!</h1>
         <p className="text-xl text-accent font-bold mt-1">{winnerName} wins!</p>
       </div>
 
       {/* Winning card if available */}
       {roundResult?.submission && (
-        <div className="card-white inline-block !p-4 border-2 border-warning shadow-[0_0_16px_rgba(245,158,11,0.15)] animate-fade-in-up">
+        <div className="card-white inline-block !p-4 border-2 border-accent shadow-[0_0_16px_rgba(240,194,127,0.15)] animate-fade-in-up">
           {roundResult.submission.map((card, i) => (
             <span key={card.id} className="text-card-white-text">
               {i > 0 && <span className="text-muted mx-1">&</span>}
@@ -2151,21 +2214,21 @@ function GameOverView({
                 key={p.id}
                 className={`flex items-center justify-between rounded-xl px-4 py-3.5 transition-all animate-fade-in-up ${
                   i === 0
-                    ? 'bg-warning/10 border-2 border-warning'
-                    : i === 1
-                      ? 'bg-surface-light border border-muted/30'
-                      : i === 2
-                        ? 'bg-surface border border-border'
-                        : 'bg-surface border border-border'
+                    ? 'border-2'
+                    : 'border'
                 }`}
-                style={{ animationDelay: `${i * 100}ms` }}
+                style={{
+                  background: i === 0 ? 'rgba(240,194,127,.1)' : i === 1 ? 'rgba(26,82,118,.3)' : 'rgba(13,27,62,.4)',
+                  borderColor: i === 0 ? 'var(--pearl)' : i === 1 ? 'rgba(245,230,202,.1)' : 'rgba(245,230,202,.06)',
+                  animationDelay: `${i * 100}ms`,
+                }}
               >
                 <div className="flex items-center gap-3">
                   <span className={`font-black text-lg w-7 text-center ${
-                    i === 0 ? 'text-warning' : i === 1 ? 'text-muted-light' : 'text-muted'
-                  }`}>
+                    i === 0 ? '' : 'text-muted'
+                  }`} style={i === 0 ? { color: 'var(--pearl)' } : undefined}>
                     {i === 0 ? (
-                      <svg className="w-6 h-6 text-warning mx-auto" viewBox="0 0 24 24" fill="currentColor">
+                      <svg className="w-6 h-6 mx-auto" style={{ color: 'var(--pearl)' }} viewBox="0 0 24 24" fill="currentColor">
                         <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z" />
                         <path d="M5 19a1 1 0 001 1h12a1 1 0 001-1v-1H5v1z" />
                       </svg>
@@ -2175,7 +2238,7 @@ function GameOverView({
                   </span>
                   <div className="min-w-0">
                     <span className={`font-semibold text-sm truncate block max-w-[140px] ${
-                      i === 0 ? 'text-foreground' : 'text-muted-light'
+                      i === 0 ? 'text-cream' : 'text-muted'
                     }`}>
                       {p.name}
                     </span>
@@ -2183,8 +2246,8 @@ function GameOverView({
                   </div>
                 </div>
                 <span className={`text-2xl font-black tabular-nums ${
-                  i === 0 ? 'text-warning' : 'text-foreground'
-                }`}>
+                  i === 0 ? '' : 'text-cream'
+                }`} style={i === 0 ? { color: 'var(--pearl)' } : undefined}>
                   {playerScore}
                 </span>
               </div>
@@ -2198,7 +2261,7 @@ function GameOverView({
         {isOwner && (
           <button
             onClick={onPlayAgain}
-            className="w-full rounded-xl bg-accent px-6 py-4 text-lg font-bold text-white hover:bg-accent-hover active:scale-[0.98] transition-all"
+            className="btn-primary w-full text-lg"
           >
             Play Again
           </button>
@@ -2206,9 +2269,9 @@ function GameOverView({
         <button
           onClick={onLeave}
           disabled={leaving}
-          className="w-full rounded-xl border border-danger/30 px-6 py-3 font-semibold text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98] transition-all"
+          className="btn-danger w-full"
         >
-          {leaving ? 'Leaving...' : 'Leave World'}
+          {leaving ? 'Leaving...' : 'Leave Game'}
         </button>
       </div>
     </div>

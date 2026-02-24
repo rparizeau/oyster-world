@@ -18,11 +18,11 @@ export const GAME_REGISTRY: GameConfig[] = [
   },
   {
     id: '4-kate',
-    name: '4 Kate',
+    name: 'Take 4',
     description: 'Classic Connect 4. Drop pieces. Get four in a row.',
     minPlayers: 2,
     maxPlayers: 2,
-    icon: '🔴',
+    icon: '❤️',
   },
   {
     id: 'whos-deal',

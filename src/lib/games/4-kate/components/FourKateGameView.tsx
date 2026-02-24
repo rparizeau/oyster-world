@@ -65,7 +65,7 @@ export default function FourKateGameView({
   }
 
   return (
-    <div className="flex min-h-dvh flex-col p-4 pb-6 max-w-lg mx-auto w-full">
+    <div className="flex flex-1 flex-col p-4 pb-6 max-w-lg mx-auto w-full">
       {/* Player indicators */}
       <div className="flex items-center justify-center gap-4 mb-4 animate-fade-in">
         <PlayerIndicator
@@ -111,7 +111,7 @@ export default function FourKateGameView({
             {isOwner && (
               <button
                 onClick={onPlayAgain}
-                className="w-full rounded-xl bg-accent px-6 py-4 text-lg font-bold text-white hover:bg-accent-hover active:scale-[0.98] transition-all"
+                className="btn-primary w-full text-lg"
               >
                 Play Again
               </button>
@@ -119,9 +119,9 @@ export default function FourKateGameView({
             <button
               onClick={onLeave}
               disabled={leaving}
-              className="w-full rounded-xl border border-danger/30 px-6 py-3 font-semibold text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98] transition-all"
+              className="btn-danger w-full"
             >
-              {leaving ? 'Leaving...' : 'Leave World'}
+              {leaving ? 'Leaving...' : 'Leave Game'}
             </button>
           </div>
         )}
@@ -135,7 +135,7 @@ export default function FourKateGameView({
             disabled={leaving}
             className="w-full text-xs text-muted hover:text-danger transition-colors py-2"
           >
-            {leaving ? 'Leaving...' : 'Leave World'}
+            {leaving ? 'Leaving...' : 'Leave Game'}
           </button>
         </div>
       )}
@@ -164,7 +164,7 @@ function PlayerIndicator({
   return (
     <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${
       isWinner
-        ? `border-accent bg-accent/10 shadow-[0_0_12px_rgba(139,92,246,0.3)]`
+        ? `border-accent bg-accent/10 shadow-[0_0_12px_rgba(240,194,127,0.3)]`
         : isActive
           ? `border-${color === 'red' ? '[#ef4444]/50' : '[#facc15]/50'} bg-surface-light`
           : 'border-border bg-surface'
