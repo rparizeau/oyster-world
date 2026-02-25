@@ -43,16 +43,15 @@ export default function HomePage() {
   const [mode, setMode] = useState<Mode>('home');
   const [name, setName] = useState('');
   const [roomCode, setRoomCode] = useState('');
-  const [selectedGame, setSelectedGame] = useState<string | null>(null);
+  const [selectedGame, setSelectedGame] = useState<string>(GAMES[0].id);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const carouselRef = useRef<HTMLDivElement>(null);
+
+  const handleCarouselSelect = useCallback((gameId: string) => {
+    setSelectedGame(gameId);
+  }, []);
 
   const handleCreate = useCallback(async () => {
-    if (!selectedGame) {
-      setError('Please select a game');
-      return;
-    }
     // Transition to descent loading screen
     setMode('loading');
     setError('');
@@ -132,7 +131,7 @@ export default function HomePage() {
   function handleBack() {
     if (mode === 'create-game') {
       setMode('create-name');
-      setSelectedGame(null);
+      setSelectedGame(GAMES[0].id);
     } else {
       setMode('home');
     }
@@ -324,7 +323,7 @@ export default function HomePage() {
 
   // --- CREATE: GAME SELECTION (Choosing) ---
   return (
-    <div className="bg-depth-choosing flex min-h-dvh flex-col items-center justify-center gap-6 p-6 animate-fade-in">
+    <div className="bg-depth-choosing flex min-h-dvh flex-col items-center justify-center gap-6 p-6 animate-fade-in overflow-hidden">
       <div className="flex flex-col items-center text-center">
         <div className="mb-3.5">
           <PearlGlobe size={48} animate="float" />
@@ -335,48 +334,8 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* Pearl cards carousel */}
-      <div className="w-full max-w-[300px]">
-        <div
-          ref={carouselRef}
-          className="flex gap-3 overflow-x-auto pb-1 px-1 snap-x snap-mandatory"
-          style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {GAMES.map((game) => {
-            const isSelected = selectedGame === game.id;
-            return (
-              <button
-                key={game.id}
-                onClick={() => setSelectedGame(game.id)}
-                className="flex-shrink-0 w-[140px] snap-center rounded-2xl p-[18px_14px] text-left transition-all relative"
-                style={{
-                  border: isSelected ? '2px solid var(--pearl)' : '2px solid rgba(255,255,255,.06)',
-                  background: isSelected ? 'rgba(240,194,127,.06)' : 'rgba(255,255,255,.03)',
-                  boxShadow: isSelected ? '0 0 20px rgba(240,194,127,.15)' : 'none',
-                }}
-              >
-                <span
-                  className="absolute top-2.5 right-2.5 text-[0.5em] font-bold tracking-[0.5px] rounded-md px-2 py-0.5"
-                  style={{ background: 'rgba(240,194,127,.1)', color: 'var(--pearl)' }}
-                >
-                  ✦ PEARL
-                </span>
-                <div className="text-[1.8em] mb-2">{game.icon}</div>
-                <div className="font-sub text-[0.95em] text-cream mb-0.5">{game.name}</div>
-                <p className="text-[0.68em] leading-snug mb-2" style={{ color: 'rgba(232,230,240,.4)' }}>
-                  {game.description}
-                </p>
-                <span
-                  className="inline-block text-[0.6em] font-bold rounded-md px-2 py-[3px]"
-                  style={{ background: 'rgba(126,184,212,.1)', color: 'var(--shallow-water)' }}
-                >
-                  {game.maxPlayers} players
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* Pearl carousel */}
+      <PearlCarousel games={GAMES} onSelect={handleCarouselSelect} />
 
       {error && (
         <div className="animate-fade-in rounded-lg px-4 py-2.5 text-center max-w-[300px] w-full" style={{ background: 'rgba(201,101,138,.1)', border: '1px solid rgba(201,101,138,.3)' }}>
@@ -387,7 +346,7 @@ export default function HomePage() {
       <div className="flex flex-col gap-3 w-full max-w-[300px]" onKeyDown={handleKeyDown}>
         <button
           onClick={handleCreate}
-          disabled={!selectedGame || loading}
+          disabled={loading}
           className="btn-primary flex items-center justify-center gap-2"
         >
           Crack It Open
@@ -400,6 +359,219 @@ export default function HomePage() {
         >
           &larr; Back
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ====================
+// PEARL CAROUSEL
+// ====================
+function PearlCarousel({
+  games,
+  onSelect,
+}: {
+  games: GameCardInfo[];
+  onSelect: (gameId: string) => void;
+}) {
+  const count = games.length;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [current, setCurrent] = useState(count); // start at middle copy, first card
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragDelta, setDragDelta] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(300);
+  const startXRef = useRef(0);
+  const wasDragRef = useRef(false);
+
+  // Measure container width
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => setContainerWidth(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Notify parent on mount
+  useEffect(() => {
+    onSelect(games[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Card width = 88% of the CTA button (max 300px), not the carousel container
+  const ctaWidth = Math.min(containerWidth, 300);
+  const cardWidth = ctaWidth * 0.88;
+  const gap = 12;
+  const stride = cardWidth + gap;
+  const threshold = cardWidth * 0.2;
+
+  // Transform to center the current card
+  const baseOffset = containerWidth / 2 - cardWidth / 2 - current * stride;
+  const translateX = baseOffset + dragDelta;
+
+  const snapTo = (index: number) => {
+    setCurrent(index);
+    setIsAnimating(true);
+    const realIndex = ((index % count) + count) % count;
+    onSelect(games[realIndex].id);
+  };
+
+  const handleTransitionEnd = () => {
+    setIsAnimating(false);
+    const realIndex = ((current % count) + count) % count;
+    const middleIndex = count + realIndex;
+    if (current !== middleIndex) {
+      setCurrent(middleIndex);
+    }
+  };
+
+  // Pointer handlers
+  const onPointerDown = (clientX: number) => {
+    if (isAnimating) return;
+    setIsDragging(true);
+    startXRef.current = clientX;
+    wasDragRef.current = false;
+    setDragDelta(0);
+  };
+
+  const onPointerMove = (clientX: number) => {
+    if (!isDragging) return;
+    const delta = clientX - startXRef.current;
+    setDragDelta(delta);
+    if (Math.abs(delta) > 5) wasDragRef.current = true;
+  };
+
+  const onPointerUp = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    if (Math.abs(dragDelta) > threshold) {
+      snapTo(current + (dragDelta < 0 ? 1 : -1));
+    } else {
+      setIsAnimating(true); // snap back
+    }
+    setDragDelta(0);
+  };
+
+  const handleCardClick = (virtualIndex: number) => {
+    if (wasDragRef.current) return;
+    if (virtualIndex === current) return;
+    snapTo(virtualIndex);
+  };
+
+  // Build tripled array
+  const tripled = [...games, ...games, ...games];
+  const easing = 'cubic-bezier(.25,.85,.35,1)';
+
+  return (
+    <div className="w-full">
+      <div
+        ref={containerRef}
+        className="w-full overflow-hidden relative"
+        style={{ touchAction: 'pan-y' }}
+        onMouseDown={(e) => { e.preventDefault(); onPointerDown(e.clientX); }}
+        onMouseMove={(e) => onPointerMove(e.clientX)}
+        onMouseUp={onPointerUp}
+        onMouseLeave={() => { if (isDragging) onPointerUp(); }}
+        onTouchStart={(e) => onPointerDown(e.touches[0].clientX)}
+        onTouchMove={(e) => onPointerMove(e.touches[0].clientX)}
+        onTouchEnd={onPointerUp}
+      >
+        <div
+          style={{
+            display: 'flex',
+            gap: `${gap}px`,
+            transform: `translateX(${translateX}px)`,
+            transition: isDragging ? 'none' : isAnimating ? `transform 0.4s ${easing}` : 'none',
+          }}
+          onTransitionEnd={handleTransitionEnd}
+        >
+          {tripled.map((game, i) => {
+            const dist = Math.abs(i - current - (isDragging ? -dragDelta / stride : 0));
+            const roundedDist = Math.round(Math.max(0, dist));
+            const isCentered = roundedDist === 0;
+            const isNear = roundedDist === 1;
+
+            const opacity = isCentered ? 1 : isNear ? 0.6 : 0.45;
+            const scale = isCentered ? 1 : isNear ? 0.95 : 0.92;
+
+            return (
+              <div
+                key={`${game.id}-${i}`}
+                onClick={() => handleCardClick(i)}
+                style={{
+                  width: `${cardWidth}px`,
+                  flexShrink: 0,
+                  opacity,
+                  transform: `scale(${scale})`,
+                  transition: isDragging ? 'none' : `opacity 0.4s ${easing}, transform 0.4s ${easing}`,
+                  borderRadius: '18px',
+                  padding: '18px 18px 20px',
+                  border: isCentered ? '2px solid rgba(255,255,255,.12)' : '2px solid rgba(255,255,255,.06)',
+                  background: isCentered ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.03)',
+                  backdropFilter: 'blur(4px)',
+                  cursor: isCentered ? 'default' : 'pointer',
+                }}
+              >
+                {/* Header: icon + text column */}
+                <div style={{ display: 'flex', gap: '14px', marginBottom: '14px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '2em', lineHeight: 1, flexShrink: 0 }}>{game.icon}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', minWidth: 0 }}>
+                    <span className="font-sub" style={{ fontSize: '1.05em', color: 'var(--cream)', lineHeight: 1.2 }}>
+                      {game.name}
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontSize: '0.5em', fontWeight: 700, letterSpacing: '0.5px',
+                        background: 'rgba(240,194,127,.1)', color: 'var(--pearl)',
+                        padding: '3px 9px', borderRadius: '6px',
+                      }}>
+                        ✦ PEARL
+                      </span>
+                      <span style={{
+                        fontSize: '0.62em', fontWeight: 700,
+                        background: 'rgba(126,184,212,.1)', color: 'var(--shallow-water)',
+                        padding: '3px 8px', borderRadius: '6px', width: 'fit-content',
+                      }}>
+                        {game.maxPlayers} players
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                {/* Description */}
+                <p className="font-body" style={{ fontSize: '0.72em', lineHeight: 1.5, color: 'rgba(232,230,240,.4)' }}>
+                  {game.description}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Indicator dots */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '16px' }}>
+        {games.map((game, i) => {
+          const realIndex = ((current % count) + count) % count;
+          const isActive = realIndex === i;
+          return (
+            <button
+              key={game.id}
+              onClick={() => snapTo(current + (i - realIndex))}
+              style={{
+                width: isActive ? '18px' : '6px',
+                height: '6px',
+                borderRadius: isActive ? '3px' : '50%',
+                background: isActive ? '#F0C27F' : 'rgba(245,230,202,.12)',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+              }}
+            />
+          );
+        })}
       </div>
     </div>
   );
