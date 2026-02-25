@@ -35,13 +35,17 @@ let pusherClientInstance: PusherClient | null = null;
 export function getPusherClient(): PusherClient {
   if (pusherClientInstance) return pusherClientInstance;
 
-  pusherClientInstance = new PusherClient(
-    requireEnv('NEXT_PUBLIC_PUSHER_KEY'),
-    {
-      cluster: requireEnv('NEXT_PUBLIC_PUSHER_CLUSTER'),
-      authEndpoint: '/api/pusher/auth',
-    }
-  );
+  // NEXT_PUBLIC_ vars must be accessed statically — Next.js inlines them at build time
+  const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
+  const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
+  if (!key || !cluster) {
+    throw new Error('Missing NEXT_PUBLIC_PUSHER_KEY or NEXT_PUBLIC_PUSHER_CLUSTER');
+  }
+
+  pusherClientInstance = new PusherClient(key, {
+    cluster,
+    authEndpoint: '/api/pusher/auth',
+  });
 
   return pusherClientInstance;
 }
