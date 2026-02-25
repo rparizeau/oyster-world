@@ -1,5 +1,5 @@
 import type { Player } from '@/lib/types';
-import type { GameModule, GameAction } from '../types';
+import type { GameModule, GameAction, AdvancementResult } from '../types';
 import type { WhosDealGameState, WhosDealSettings, EuchreRound, Card, Suit, Rank, TrickCard } from './types';
 import {
   getEffectiveSuit,
@@ -15,6 +15,7 @@ import {
   BOT_ACTION_DELAY_RANGE_MS,
   ROUND_RESULT_DISPLAY_MS,
 } from './constants';
+import { getWhosDealBotAction } from './bots';
 
 // --- Error class for validation failures that need specific error messages ---
 
@@ -740,5 +741,275 @@ export const whosDealModule: GameModule<WhosDealGameState> = {
         handCounts,
       },
     };
+  },
+
+  processAdvancement(state: WhosDealGameState, players: Player[], now: number): AdvancementResult | null {
+    // Phase advancement: round_over → next round
+    if (state.round?.trumpPhase === 'round_over' && state.phase !== 'game_over' && shouldAdvancePhase(state, now)) {
+      const newGame = advanceToNextRound(state, players);
+      if (newGame === state) return null;
+
+      const playerEvents: AdvancementResult['playerEvents'] = [];
+      const roomEvents: AdvancementResult['roomEvents'] = [];
+
+      const updatedGame = newGame;
+      if (updatedGame.round?.trumpPhase === 'round1') {
+        roomEvents.push({
+          event: 'new-round',
+          data: {
+            dealerSeatIndex: updatedGame.dealerSeatIndex,
+            faceUpCard: updatedGame.round.faceUpCard,
+          },
+        });
+        for (const pid of updatedGame.seats) {
+          const hand = updatedGame.round.hands[pid];
+          if (hand) {
+            playerEvents.push({ playerId: pid, event: 'hand-updated', data: { hand } });
+          }
+        }
+      }
+
+      return {
+        newState: newGame,
+        canApply: (current) => {
+          const g = current as WhosDealGameState;
+          return g.round?.trumpPhase === 'round_over' && shouldAdvancePhase(g, now);
+        },
+        roomEvents,
+        playerEvents,
+        recurse: true,
+      };
+    }
+
+    // Bot action execution
+    if (!shouldExecuteBotAction(state, now)) return null;
+    if (!state.round) return null;
+
+    const phase = state.round.trumpPhase;
+    if (phase === 'round_over') return null;
+
+    const currentPlayerId = state.seats[state.round.currentTurnSeatIndex];
+    const currentPlayer = players.find(p => p.id === currentPlayerId);
+    if (!currentPlayer?.isBot) return null;
+
+    const botAction = getWhosDealBotAction(state, currentPlayerId);
+    if (botAction.type === 'noop') return null;
+
+    let newState: WhosDealGameState;
+    try {
+      newState = processAction(state, currentPlayerId, botAction);
+    } catch (e) {
+      if (e instanceof WhosDealError) return null;
+      throw e;
+    }
+
+    if (newState === state) return null;
+
+    // Set bot timing for next player if needed
+    const botAt = computeBotTiming(newState, players);
+    if (botAt) {
+      newState = { ...newState, botActionAt: botAt };
+    }
+
+    const oldState = state;
+    const roomEvents: AdvancementResult['roomEvents'] = [];
+    const playerEvents: AdvancementResult['playerEvents'] = [];
+
+    switch (botAction.type) {
+      case 'call-trump': {
+        const seatIndex = getSeatIndex(newState, currentPlayerId);
+        const goAlone = newState.round?.goingAlone || false;
+
+        if (oldState.round?.trumpPhase === 'round1') {
+          roomEvents.push({ event: 'trump-action', data: { seatIndex, action: 'order-up', goAlone } });
+          roomEvents.push({
+            event: 'trump-confirmed',
+            data: {
+              trumpSuit: newState.round!.trumpSuit,
+              callingPlayer: currentPlayerId,
+              callingTeam: newState.round!.callingTeam,
+              goAlone,
+            },
+          });
+          const dealerPlayerId = newState.seats[newState.dealerSeatIndex];
+          playerEvents.push({
+            playerId: dealerPlayerId,
+            event: 'hand-updated',
+            data: { hand: newState.round!.hands[dealerPlayerId] },
+          });
+        } else if (oldState.round?.trumpPhase === 'round2') {
+          roomEvents.push({
+            event: 'trump-action',
+            data: { seatIndex, action: 'call', suit: newState.round!.trumpSuit, goAlone },
+          });
+          roomEvents.push({
+            event: 'trump-confirmed',
+            data: {
+              trumpSuit: newState.round!.trumpSuit,
+              callingPlayer: currentPlayerId,
+              callingTeam: newState.round!.callingTeam,
+              goAlone,
+            },
+          });
+          roomEvents.push({
+            event: 'trick-started',
+            data: { leadSeatIndex: newState.round!.trickLeadSeatIndex },
+          });
+        }
+        break;
+      }
+
+      case 'pass-trump': {
+        const seatIndex = getSeatIndex(oldState, currentPlayerId);
+        roomEvents.push({ event: 'trump-action', data: { seatIndex, action: 'pass' } });
+        break;
+      }
+
+      case 'discard': {
+        roomEvents.push({
+          event: 'dealer-discarded',
+          data: { seatIndex: newState.dealerSeatIndex },
+        });
+        const dealerPlayerId = newState.seats[newState.dealerSeatIndex];
+        playerEvents.push({
+          playerId: dealerPlayerId,
+          event: 'hand-updated',
+          data: { hand: newState.round!.hands[dealerPlayerId] },
+        });
+        roomEvents.push({
+          event: 'trick-started',
+          data: { leadSeatIndex: newState.round!.trickLeadSeatIndex },
+        });
+        break;
+      }
+
+      case 'play-card': {
+        const seatIndex = getSeatIndex(oldState, currentPlayerId);
+        const cardId = (botAction.payload as { cardId: string }).cardId;
+        const playedCard = oldState.round!.hands[currentPlayerId].find(c => c.id === cardId);
+
+        roomEvents.push({ event: 'card-played', data: { seatIndex, card: playedCard } });
+
+        const oldTricksPlayed = oldState.round!.tricksPlayed;
+        const newTricksPlayed = newState.round!.tricksPlayed;
+
+        if (newTricksPlayed > oldTricksPlayed) {
+          const winningSeatIndex = newState.round!.trickLeadSeatIndex;
+          const winningTeam = getTeamForSeat(winningSeatIndex);
+
+          roomEvents.push({
+            event: 'trick-won',
+            data: { winningSeatIndex, winningTeam, tricksWon: newState.round!.tricksWon },
+          });
+
+          if (newState.round!.trumpPhase === 'round_over') {
+            const pointsAwarded = {
+              a: newState.teams.a.score - oldState.teams.a.score,
+              b: newState.teams.b.score - oldState.teams.b.score,
+            };
+            roomEvents.push({
+              event: 'round-over',
+              data: {
+                callingTeam: newState.round!.callingTeam,
+                tricksWon: newState.round!.tricksWon,
+                pointsAwarded,
+                scores: { a: newState.teams.a.score, b: newState.teams.b.score },
+                isGameOver: newState.phase === 'game_over',
+              },
+            });
+            if (newState.phase === 'game_over') {
+              roomEvents.push({
+                event: 'game-over',
+                data: {
+                  winningTeam: newState.winningTeam,
+                  finalScores: { a: newState.teams.a.score, b: newState.teams.b.score },
+                },
+              });
+            }
+          } else {
+            roomEvents.push({
+              event: 'trick-started',
+              data: { leadSeatIndex: newState.round!.trickLeadSeatIndex },
+            });
+          }
+        }
+        break;
+      }
+    }
+
+    return {
+      newState,
+      canApply: (current) => {
+        const g = current as WhosDealGameState;
+        if (!g.round || g.round.trumpPhase !== phase) return false;
+        return g.round.currentTurnSeatIndex === state.round!.currentTurnSeatIndex;
+      },
+      roomEvents,
+      playerEvents,
+      recurse: true,
+    };
+  },
+
+  processPlayerReplacement(
+    state: WhosDealGameState, departingPlayerId: string, replacementBotId: string,
+    _playerIndex: number, _players: Player[]
+  ): WhosDealGameState {
+    // Update seats
+    const seats = state.seats.map(id => id === departingPlayerId ? replacementBotId : id);
+
+    // Update teams
+    const teams = {
+      a: {
+        ...state.teams.a,
+        playerIds: state.teams.a.playerIds.map(id =>
+          id === departingPlayerId ? replacementBotId : id
+        ) as [string, string],
+      },
+      b: {
+        ...state.teams.b,
+        playerIds: state.teams.b.playerIds.map(id =>
+          id === departingPlayerId ? replacementBotId : id
+        ) as [string, string],
+      },
+    };
+
+    // Update round
+    let round = state.round;
+    if (round) {
+      const hands = { ...round.hands };
+      if (hands[departingPlayerId]) {
+        hands[replacementBotId] = hands[departingPlayerId];
+        delete hands[departingPlayerId];
+      }
+
+      const passedPlayers = round.passedPlayers.map(id =>
+        id === departingPlayerId ? replacementBotId : id
+      );
+      const currentTrick = round.currentTrick.map(tc =>
+        tc.playerId === departingPlayerId ? { ...tc, playerId: replacementBotId } : tc
+      );
+      const callingPlayerId = round.callingPlayerId === departingPlayerId ? replacementBotId : round.callingPlayerId;
+      const alonePlayerId = round.alonePlayerId === departingPlayerId ? replacementBotId : round.alonePlayerId;
+
+      round = {
+        ...round,
+        hands,
+        passedPlayers,
+        currentTrick,
+        callingPlayerId,
+        alonePlayerId,
+      };
+    }
+
+    // If it was the departing player's turn, set botActionAt
+    let botActionAt = state.botActionAt;
+    if (round && round.trumpPhase !== 'round_over' && state.phase !== 'game_over') {
+      const currentTurnId = seats[round.currentTurnSeatIndex];
+      if (currentTurnId === replacementBotId) {
+        botActionAt = getBotActionTimestamp();
+      }
+    }
+
+    return { ...state, seats, teams, round, botActionAt };
   },
 };

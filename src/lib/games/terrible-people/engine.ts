@@ -1,5 +1,5 @@
 import type { Player, GameState, BlackCard, WhiteCard } from '@/lib/types';
-import type { GameModule, GameAction } from '@/lib/games/types';
+import type { GameModule, GameAction, AdvancementResult } from '@/lib/games/types';
 import {
   HAND_SIZE,
   DEFAULT_TARGET_SCORE,
@@ -337,5 +337,214 @@ export const terriblePeopleModule: GameModule<GameState> = {
       revealOrder: state.revealOrder,
       roundWinnerId: state.roundWinnerId,
     };
+  },
+
+  processAdvancement(state: GameState, players: Player[], now: number): AdvancementResult | null {
+    // Phase advancement: czar_reveal → submitting
+    if (state.phase === 'czar_reveal' && shouldAdvancePhase(state, now)) {
+      const newGame = startSubmittingPhase(state, players, now);
+      return {
+        newState: newGame,
+        canApply: (current) => {
+          const g = current as GameState;
+          return g.phase === 'czar_reveal' && shouldAdvancePhase(g, now);
+        },
+        roomEvents: [{
+          event: 'phase-changed',
+          data: {
+            phase: 'submitting',
+            blackCard: newGame.blackCard,
+            czarId: players[newGame.czarIndex]?.id,
+            czarIndex: newGame.czarIndex,
+            currentRound: newGame.currentRound,
+            phaseEndsAt: newGame.phaseEndsAt,
+          },
+        }],
+        playerEvents: [],
+        recurse: true,
+      };
+    }
+
+    // Phase advancement: round_result → next round (czar_reveal)
+    if (state.phase === 'round_result' && shouldAdvancePhase(state, now)) {
+      const newGame = advanceRound(state, players, now);
+      const playerEvents: AdvancementResult['playerEvents'] = [];
+      for (const player of players) {
+        const hand = newGame.hands[player.id];
+        if (hand) {
+          playerEvents.push({ playerId: player.id, event: 'hand-updated', data: { hand } });
+        }
+      }
+      return {
+        newState: newGame,
+        canApply: (current) => {
+          const g = current as GameState;
+          return g.phase === 'round_result' && shouldAdvancePhase(g, now);
+        },
+        roomEvents: [{
+          event: 'phase-changed',
+          data: {
+            phase: 'czar_reveal',
+            blackCard: newGame.blackCard,
+            czarId: players[newGame.czarIndex]?.id,
+            czarIndex: newGame.czarIndex,
+            currentRound: newGame.currentRound,
+            phaseEndsAt: newGame.phaseEndsAt,
+          },
+        }],
+        playerEvents,
+        recurse: true,
+      };
+    }
+
+    // Bot action: submit cards during submitting phase
+    if (state.phase === 'submitting' && shouldExecuteBotAction(state, now)) {
+      let currentGame = { ...state };
+      let stateChanged = false;
+      const roomEvents: AdvancementResult['roomEvents'] = [];
+
+      for (let i = 0; i < players.length; i++) {
+        if (i === state.czarIndex) continue;
+        const player = players[i];
+        if (!player.isBot) continue;
+        if (currentGame.submissions[player.id]) continue;
+
+        const hand = currentGame.hands[player.id];
+        if (!hand || hand.length === 0) continue;
+
+        const cardIds = selectRandomCards(hand, currentGame.blackCard.pick);
+        const result = submitCards(currentGame, player.id, cardIds, players);
+
+        if (result.ok) {
+          currentGame = result.data;
+          stateChanged = true;
+          roomEvents.push({ event: 'player-submitted', data: { playerId: player.id } });
+        }
+      }
+
+      if (!stateChanged) return null;
+
+      // If all submitted, also emit judging events
+      if (currentGame.phase === 'judging') {
+        const anonymousSubmissions = currentGame.revealOrder.map((id) => ({
+          id,
+          cards: currentGame.submissions[id],
+        }));
+
+        roomEvents.push({
+          event: 'phase-changed',
+          data: {
+            phase: 'judging',
+            blackCard: currentGame.blackCard,
+            czarId: players[currentGame.czarIndex]?.id,
+            czarIndex: currentGame.czarIndex,
+            currentRound: currentGame.currentRound,
+          },
+        });
+        roomEvents.push({
+          event: 'submissions-revealed',
+          data: { submissions: anonymousSubmissions },
+        });
+      }
+
+      return {
+        newState: currentGame,
+        canApply: (current) => (current as GameState).phase === 'submitting',
+        roomEvents,
+        playerEvents: [],
+        recurse: currentGame.phase === 'judging',
+      };
+    }
+
+    // Bot action: judge during judging phase
+    if (state.phase === 'judging' && shouldExecuteBotAction(state, now)) {
+      const czar = players[state.czarIndex];
+      if (!czar || !czar.isBot) return null;
+      if (state.roundWinnerId !== null) return null;
+
+      const winnerId = selectRandomWinner(state.submissions, czar.id);
+      if (!winnerId) return null;
+
+      const result = judgeWinner(state, czar.id, winnerId, players);
+      if (!result.ok) return null;
+
+      const newGameState = result.state;
+      const winnerPlayer = players.find((p) => p.id === winnerId)!;
+
+      const scores: Record<string, number> = {};
+      for (const p of result.updatedPlayers) {
+        scores[p.id] = p.score;
+      }
+
+      const roomEvents: AdvancementResult['roomEvents'] = [{
+        event: 'round-result',
+        data: {
+          winnerId,
+          winnerName: winnerPlayer.name,
+          submission: newGameState.submissions[winnerId],
+          scores,
+          isGameOver: newGameState.phase === 'game_over',
+        },
+      }];
+
+      if (newGameState.phase === 'game_over') {
+        roomEvents.push({
+          event: 'game-over',
+          data: {
+            finalScores: scores,
+            winnerId,
+            winnerName: winnerPlayer.name,
+          },
+        });
+      }
+
+      return {
+        newState: newGameState,
+        canApply: (current) => {
+          const g = current as GameState;
+          return g.phase === 'judging' && g.roundWinnerId === null;
+        },
+        roomEvents,
+        playerEvents: [],
+        recurse: false,
+        updatedPlayers: result.updatedPlayers,
+      };
+    }
+
+    return null;
+  },
+
+  processPlayerReplacement(
+    state: GameState, departingPlayerId: string, replacementBotId: string,
+    playerIndex: number, players: Player[]
+  ): GameState {
+    const hands = { ...state.hands };
+    const submissions = { ...state.submissions };
+
+    if (hands[departingPlayerId]) {
+      hands[replacementBotId] = hands[departingPlayerId];
+      delete hands[departingPlayerId];
+    }
+
+    if (submissions[departingPlayerId]) {
+      submissions[replacementBotId] = submissions[departingPlayerId];
+      delete submissions[departingPlayerId];
+    }
+
+    let botActionAt = state.botActionAt;
+
+    if (state.phase === 'submitting' && !submissions[replacementBotId] && playerIndex !== state.czarIndex) {
+      botActionAt = getBotActionTimestamp(BOT_SUBMIT_DELAY_RANGE_MS);
+    }
+
+    if (state.phase === 'judging' && playerIndex === state.czarIndex && state.roundWinnerId === null) {
+      botActionAt = Date.now() + BOT_JUDGE_DELAY_MS;
+    }
+
+    const revealOrder = state.revealOrder.map((id) =>
+      id === departingPlayerId ? replacementBotId : id
+    );
+
+    return { ...state, hands, submissions, botActionAt, revealOrder };
   },
 };

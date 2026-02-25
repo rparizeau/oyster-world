@@ -1,5 +1,5 @@
 import type { Player } from '@/lib/types';
-import type { GameModule, GameAction } from '@/lib/games/types';
+import type { GameModule, GameAction, AdvancementResult } from '@/lib/games/types';
 import { BOARD_COLS, BOARD_ROWS, WIN_LENGTH, BOT_MOVE_DELAY_MS } from './constants';
 import { getBotMove } from './bots';
 
@@ -285,5 +285,92 @@ export const fourKateModule: GameModule<FourKateState> = {
   sanitizeForPlayer(state: FourKateState, _playerId: string) {
     // Connect 4 is full information — return everything
     return state;
+  },
+
+  processAdvancement(state: FourKateState, players: Player[], now: number): AdvancementResult | null {
+    if (state.phase !== 'playing') return null;
+    if (!state.botActionAt || now < state.botActionAt) return null;
+
+    // Find the bot whose turn it is
+    const currentPlayerId = state.currentTurn === 'red' ? state.players.red : state.players.yellow;
+    const currentPlayer = players.find((p) => p.id === currentPlayerId);
+    if (!currentPlayer?.isBot) return null;
+
+    const moveCountBefore = state.moves.length;
+    const color = getPlayerColor(state, currentPlayerId);
+    if (!color) return null;
+
+    const column = getBotMove(state, color);
+    const newState = processDropAction(state, currentPlayerId, column);
+
+    // If state didn't change, skip
+    if (newState === state || newState.moves.length === moveCountBefore) return null;
+
+    // If game continues and next player is also a bot, set botActionAt
+    let stateToSave = newState;
+    if (newState.phase === 'playing') {
+      const nextPlayerId = newState.currentTurn === 'red' ? newState.players.red : newState.players.yellow;
+      const nextPlayer = players.find((p) => p.id === nextPlayerId);
+      if (nextPlayer?.isBot) {
+        stateToSave = { ...newState, botActionAt: Date.now() + BOT_MOVE_DELAY_MS };
+      }
+    }
+
+    const lastMove = stateToSave.moves[stateToSave.moves.length - 1];
+    const roomEvents: AdvancementResult['roomEvents'] = [];
+
+    if (lastMove) {
+      roomEvents.push({
+        event: 'move-made',
+        data: {
+          column: lastMove.col,
+          row: lastMove.row,
+          color: lastMove.color,
+          currentTurn: stateToSave.currentTurn,
+          board: stateToSave.board,
+        },
+      });
+    }
+
+    if (stateToSave.phase === 'game_over') {
+      roomEvents.push({
+        event: 'game-over',
+        data: {
+          winner: stateToSave.winner,
+          winningCells: stateToSave.winningCells,
+          finalBoard: stateToSave.board,
+          isDraw: stateToSave.isDraw,
+        },
+      });
+    }
+
+    return {
+      newState: stateToSave,
+      canApply: (current) => (current as FourKateState).moves.length === moveCountBefore,
+      roomEvents,
+      playerEvents: [],
+      recurse: stateToSave.phase === 'playing' && stateToSave.botActionAt !== null,
+    };
+  },
+
+  processPlayerReplacement(
+    state: FourKateState, departingPlayerId: string, replacementBotId: string,
+    _playerIndex: number, _players: Player[]
+  ): FourKateState {
+    const players = { ...state.players };
+
+    if (players.red === departingPlayerId) {
+      players.red = replacementBotId;
+    } else if (players.yellow === departingPlayerId) {
+      players.yellow = replacementBotId;
+    }
+
+    let botActionAt = state.botActionAt;
+    const currentTurnPlayerId = state.currentTurn === 'red' ? players.red : players.yellow;
+    if (state.phase === 'playing' && currentTurnPlayerId === replacementBotId) {
+      botActionAt = Date.now() + BOT_MOVE_DELAY_MS;
+    }
+
+    return { ...state, players, botActionAt };
   },
 };
