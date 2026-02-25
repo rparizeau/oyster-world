@@ -2,11 +2,21 @@ import { Redis } from '@upstash/redis';
 import { Room, PlayerSession } from './types';
 import { ROOM_TTL_SECONDS } from './constants';
 
+// --- Env-var validation ---
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 // --- Client ---
 
 export const redis = new Redis({
-  url: process.env.KV_REST_API_URL!,
-  token: process.env.KV_REST_API_TOKEN!,
+  url: requireEnv('KV_REST_API_URL'),
+  token: requireEnv('KV_REST_API_TOKEN'),
 });
 
 // --- Key helpers ---

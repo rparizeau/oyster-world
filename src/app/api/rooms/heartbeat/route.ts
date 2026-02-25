@@ -617,10 +617,14 @@ export async function POST(request: Request) {
   const currentRoom = await getRoom(roomCode);
   if (!currentRoom) return roomNotFound();
 
-  for (const p of currentRoom.players) {
-    if (p.isBot) continue;
+  const humanPlayers = currentRoom.players.filter(p => !p.isBot);
+  const heartbeats = await Promise.all(
+    humanPlayers.map(p => getHeartbeat(roomCode, p.id))
+  );
 
-    const lastSeen = await getHeartbeat(roomCode, p.id);
+  for (let i = 0; i < humanPlayers.length; i++) {
+    const p = humanPlayers[i];
+    const lastSeen = heartbeats[i];
     if (!lastSeen) continue;
 
     const elapsed = now - lastSeen;

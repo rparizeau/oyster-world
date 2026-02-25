@@ -78,7 +78,6 @@ export default function RoomPage() {
 
   // Game state (Who's Deal?)
   const [whosDealState, setWhosDealState] = useState<ClientWhosDealState | null>(null);
-  const [wdHand, setWdHand] = useState<WDCard[]>([]);
   const [wdTrickWinner, setWdTrickWinner] = useState<{ seatIndex: number; team: 'a' | 'b' } | null>(null);
   const [wdRoundSummary, setWdRoundSummary] = useState<{
     callingTeam: 'a' | 'b';
@@ -124,9 +123,6 @@ export default function RoomPage() {
           setFourKateState(data.game as FourKateState);
         } else if (data.gameId === 'whos-deal') {
           setWhosDealState(data.game as ClientWhosDealState);
-          if (data.game.round?.myHand) {
-            setWdHand(data.game.round.myHand);
-          }
         } else {
           setGameState(data.game);
           if (data.game.submissions && playerIdRef.current && data.game.submissions[playerIdRef.current]) {
@@ -779,8 +775,6 @@ export default function RoomPage() {
     pChannel.bind('hand-updated', (data: { hand: WhiteCard[] | WDCard[] }) => {
       // Detect if this is a Who's Deal? hand (cards have suit/rank) or TP hand (cards have text)
       if (data.hand.length > 0 && 'suit' in data.hand[0]) {
-        setWdHand(data.hand as WDCard[]);
-        // Also update whosDealState.round.myHand
         setWhosDealState((prev) => {
           if (!prev?.round) return prev;
           return {
@@ -806,17 +800,33 @@ export default function RoomPage() {
   useEffect(() => {
     if (!playerId || !roomCode) return;
 
+    let abortController: AbortController | null = null;
+
     const sendHeartbeat = () => {
+      abortController?.abort();
+      abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController?.abort(), 5000);
+
       fetch('/api/rooms/heartbeat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomCode, playerId }),
-      }).catch(() => {});
+        signal: abortController.signal,
+      })
+        .catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.warn('Heartbeat failed:', err.message);
+          }
+        })
+        .finally(() => clearTimeout(timeoutId));
     };
 
     sendHeartbeat();
     const interval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      abortController?.abort();
+    };
   }, [playerId, roomCode]);
 
   // --- Actions ---
@@ -1028,7 +1038,6 @@ export default function RoomPage() {
   async function handleWDDiscard(cardId: string) {
     if (!playerId) return;
     // Optimistically remove card from hand
-    setWdHand(prev => prev.filter(c => c.id !== cardId));
     setWhosDealState(prev => {
       if (!prev?.round) return prev;
       return {
@@ -1058,7 +1067,6 @@ export default function RoomPage() {
   async function handleWDPlayCard(cardId: string) {
     if (!playerId) return;
     // Optimistically remove card from hand
-    setWdHand(prev => prev.filter(c => c.id !== cardId));
     setWhosDealState(prev => {
       if (!prev?.round) return prev;
       return {
