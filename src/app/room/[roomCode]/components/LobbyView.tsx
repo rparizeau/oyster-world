@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import type { Room } from '@/lib/types';
+import { getGameConfig } from '@/lib/games/registry';
+import type { Difficulty } from '@/lib/games/minesweeper/types';
 import PlayerCard from './PlayerCard';
 import WhosDealTeamAssignment from './WhosDealTeamAssignment';
 
@@ -22,15 +25,22 @@ export default function LobbyView({
   leaving: boolean;
   copied: 'code' | 'link' | null;
   onCopy: (type: 'code' | 'link') => void;
-  onStartGame: () => void;
+  onStartGame: (settings?: Record<string, unknown>) => void;
   onLeave: () => void;
   onSwapTeams: (playerIdA: string, playerIdB: string) => void;
   onSetTargetScore: (targetScore: number) => void;
 }) {
   const humanCount = room.players.filter((p) => !p.isBot).length;
   const isWhosDeal = room.gameId === 'whos-deal';
+  const gameConfig = getGameConfig(room.gameId);
+  const isSinglePlayer = gameConfig?.maxPlayers === 1;
+  const isMinesweeper = room.gameId === 'minesweeper';
   const teams = room.settings?.teams as { a: string[]; b: string[] } | undefined;
   const targetScore = (room.settings?.targetScore as number) || 10;
+
+  const [difficulty, setDifficulty] = useState<Difficulty>(
+    (room.settings?.difficulty as Difficulty) || 'easy',
+  );
 
   return (
     <div className="flex flex-col items-center gap-6 p-4 pt-4 pb-6 animate-fade-in">
@@ -64,6 +74,15 @@ export default function LobbyView({
           isOwner={isOwner}
           onSwapTeams={onSwapTeams}
         />
+      ) : isSinglePlayer ? (
+        /* Single-player lobby — just the owner card */
+        <div className="w-full max-w-sm">
+          <div className="flex flex-col gap-2">
+            {room.players.filter((p) => !p.isBot).map((player, i) => (
+              <PlayerCard key={player.id} player={player} isOwnerPlayer={player.id === room.ownerId} index={i} />
+            ))}
+          </div>
+        </div>
       ) : (
         /* Standard player list for other games */
         <div className="w-full max-w-sm">
@@ -102,11 +121,33 @@ export default function LobbyView({
         </div>
       )}
 
+      {/* Minesweeper Difficulty Selector */}
+      {isMinesweeper && (
+        <div className="w-full max-w-sm">
+          <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold mb-3" style={{ color: 'rgba(232,230,240,.25)' }}>Difficulty</h2>
+          <div className="flex gap-1.5">
+            {(['easy', 'medium', 'hard'] as Difficulty[]).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDifficulty(d)}
+                className={`flex-1 rounded-lg px-4 py-2 min-h-[44px] font-semibold transition-all capitalize ${
+                  difficulty === d
+                    ? 'bg-accent/10 border border-accent text-pearl'
+                    : 'border border-border bg-surface text-cream'
+                }`}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex flex-col gap-2 w-full max-w-sm">
         {isOwner ? (
           <button
-            onClick={onStartGame}
+            onClick={() => isMinesweeper ? onStartGame({ difficulty }) : onStartGame()}
             disabled={starting}
             className="btn-primary flex items-center justify-center gap-2 text-lg"
           >
@@ -145,9 +186,11 @@ export default function LobbyView({
         </button>
       </div>
 
-      <p className="text-[0.68em] text-center" style={{ color: 'rgba(232,230,240,.18)' }}>
-        Share the code — the more the merrier
-      </p>
+      {!isSinglePlayer && (
+        <p className="text-[0.68em] text-center" style={{ color: 'rgba(232,230,240,.18)' }}>
+          Share the code — the more the merrier
+        </p>
+      )}
     </div>
   );
 }

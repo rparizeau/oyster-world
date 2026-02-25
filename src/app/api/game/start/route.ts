@@ -8,7 +8,7 @@ import { VALID_TARGET_SCORES } from '@/lib/games/whos-deal/constants';
 import type { WhosDealGameState } from '@/lib/games/whos-deal';
 
 export async function POST(request: Request) {
-  let body: { roomCode?: string; playerId?: string };
+  let body: { roomCode?: string; playerId?: string; settings?: Record<string, unknown> };
   try {
     body = await request.json();
   } catch {
@@ -17,6 +17,7 @@ export async function POST(request: Request) {
 
   const roomCode = body.roomCode?.trim().toUpperCase();
   const playerId = body.playerId?.trim();
+  const clientSettings = body.settings;
 
   if (!roomCode || !playerId) {
     return apiError('Room code and player ID are required', 'INVALID_REQUEST', 400);
@@ -58,8 +59,11 @@ export async function POST(request: Request) {
     }
   }
 
+  // Merge client-provided settings with room settings (client wins)
+  const mergedSettings = { ...room.settings, ...clientSettings };
+
   // Use the GameModule interface for all games
-  const gameState = gameModule.initialize(room.players, room.settings) as Room['game'];
+  const gameState = gameModule.initialize(room.players, mergedSettings) as Room['game'];
 
   const updated = await atomicRoomUpdate(roomCode, (current) => {
     // Double-check status (idempotent)
@@ -138,6 +142,15 @@ export async function POST(request: Request) {
           // Non-fatal
         }
       }
+    }
+  } else if (room.gameId === 'minesweeper') {
+    // Minesweeper: single-player, client owns game state — just signal start
+    try {
+      await pusher.trigger(roomChannel(roomCode), 'game-started', {
+        gameState: gameState,
+      });
+    } catch {
+      // Non-fatal
     }
   } else {
     // Generic: send full sanitized state (e.g., 4 Kate is full information)

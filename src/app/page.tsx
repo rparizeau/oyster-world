@@ -34,6 +34,13 @@ const GAMES: GameCardInfo[] = [
     icon: '😈',
     maxPlayers: 4,
   },
+  {
+    id: 'minesweeper',
+    name: 'Minesweeper',
+    description: 'Classic Minesweeper. Find the mines. Clear the board.',
+    icon: '💣',
+    maxPlayers: 1,
+  },
 ];
 
 type Mode = 'home' | 'create-name' | 'create-game' | 'loading' | 'join';
@@ -535,7 +542,7 @@ function PearlCarousel({
                         background: 'rgba(126,184,212,.1)', color: 'var(--shallow-water)',
                         padding: '3px 8px', borderRadius: '6px', width: 'fit-content',
                       }}>
-                        {game.maxPlayers} players
+                        {game.maxPlayers} {game.maxPlayers === 1 ? 'player' : 'players'}
                       </span>
                     </div>
                   </div>

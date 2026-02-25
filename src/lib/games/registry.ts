@@ -32,6 +32,14 @@ export const GAME_REGISTRY: GameConfig[] = [
     maxPlayers: 4,
     icon: '😈',
   },
+  {
+    id: 'minesweeper',
+    name: 'Minesweeper',
+    description: 'Classic Minesweeper. Find the mines. Clear the board.',
+    minPlayers: 1,
+    maxPlayers: 1,
+    icon: '💣',
+  },
 ];
 
 export function getGameConfig(gameId: string): GameConfig | undefined {

@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import FourKateGameView from '@/lib/games/4-kate/components/FourKateGameView';
 import WhosDealGameView from '@/lib/games/whos-deal/components/WhosDealGameView';
 import TerriblePeopleGameView from '@/lib/games/terrible-people/components/TerriblePeopleGameView';
+import MinesweeperGameView from '@/lib/games/minesweeper/components/MinesweeperGameView';
 import DeepBar from '@/components/DeepBar';
 
 import { GAME_DISPLAY_NAMES } from './types';
@@ -13,6 +14,8 @@ import { useRoomConnection } from './hooks/useRoomConnection';
 import { useFourKate } from './hooks/useFourKate';
 import { useTerriblePeople } from './hooks/useTerriblePeople';
 import { useWhosDeal } from './hooks/useWhosDeal';
+import { useMinesweeper } from './hooks/useMinesweeper';
+import type { Difficulty } from '@/lib/games/minesweeper/types';
 
 import ToastContainer from './components/ToastContainer';
 import ConnectionBanner from './components/ConnectionBanner';
@@ -65,6 +68,11 @@ export default function RoomPage() {
     handleSwapTeams, handleSetTargetScore,
   } = useWhosDeal(roomCode, playerId, room, roomCh, playerCh, setRoom, addToast);
 
+  // Minesweeper — client-side game state
+  const minesweeperDifficulty: Difficulty =
+    (room?.game as { difficulty?: Difficulty } | null)?.difficulty || 'easy';
+  const minesweeper = useMinesweeper(minesweeperDifficulty);
+
   // --- Actions ---
 
   async function handleLeave() {
@@ -84,14 +92,14 @@ export default function RoomPage() {
     }
   }
 
-  async function handleStartGame() {
+  async function handleStartGame(settings?: Record<string, unknown>) {
     if (!playerId || starting) return;
     setStarting(true);
     try {
       const res = await fetch('/api/game/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomCode, playerId }),
+        body: JSON.stringify({ roomCode, playerId, settings }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -101,6 +109,22 @@ export default function RoomPage() {
       setError('Failed to start game');
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function handleChangeDifficulty() {
+    if (!playerId) return;
+    // Immediately update local state to show lobby
+    setRoom((prev) => prev ? { ...prev, status: 'waiting' as const, game: null } : prev);
+    // Persist to server
+    try {
+      await fetch('/api/game/play-again', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomCode, playerId }),
+      });
+    } catch {
+      // Non-fatal — local state already updated
     }
   }
 
@@ -197,6 +221,35 @@ export default function RoomPage() {
             onLeave={handleLeave}
           />
         </div>
+      </div>
+    );
+  }
+
+  // Minesweeper game view
+  if (room.status === 'playing' && room.gameId === 'minesweeper') {
+    return (
+      <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
+        <ToastContainer toasts={toasts} />
+        <ConnectionBanner status={connectionStatus} />
+        <DeepBar
+          gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+          showAction={false}
+          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
+        />
+        <MinesweeperGameView
+          game={minesweeper.game}
+          dispatch={minesweeper.dispatch}
+          displayTime={minesweeper.displayTime}
+          minesRemaining={minesweeper.minesRemaining}
+          pressingIndex={minesweeper.pressingIndex}
+          initGrid={minesweeper.initGrid}
+          resetGrid={minesweeper.resetGrid}
+          getLongPressHandlers={minesweeper.getLongPressHandlers}
+          handleCellClick={minesweeper.handleCellClick}
+          handleRightClick={minesweeper.handleRightClick}
+          onLeave={handleLeave}
+          onChangeDifficulty={handleChangeDifficulty}
+        />
       </div>
     );
   }

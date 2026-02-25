@@ -53,7 +53,9 @@ export async function POST(request: Request) {
     score: 0,
   };
 
-  const players = fillWithBots([creator], gameConfig.maxPlayers);
+  const players = gameConfig.maxPlayers > 1
+    ? fillWithBots([creator], gameConfig.maxPlayers)
+    : [creator];
 
   const room: Room = {
     roomCode,
@@ -73,6 +75,13 @@ export async function POST(request: Request) {
         a: [players[0].id, players[2].id], // Seats 0 & 2
         b: [players[1].id, players[3].id], // Seats 1 & 3
       },
+    };
+  }
+
+  // Initialize default settings for Minesweeper
+  if (gameId === 'minesweeper') {
+    room.settings = {
+      difficulty: 'easy',
     };
   }
 

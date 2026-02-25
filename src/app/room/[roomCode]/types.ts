@@ -24,4 +24,5 @@ export const GAME_DISPLAY_NAMES: Record<string, string> = {
   'terrible-people': 'Terrible People',
   '4-kate': 'Take 4',
   'whos-deal': "Who's Deal?",
+  'minesweeper': 'Minesweeper',
 };
