@@ -343,10 +343,8 @@ Before shipping a new game, verify:
 
 Known patterns to be aware of (not to replicate in new games):
 
-1. **Terrible People types in platform file**: `GameState`, `BlackCard`, `WhiteCard` live in `src/lib/types.ts` instead of `src/lib/games/terrible-people/types.ts`. New games should define their types in their own `types.ts`.
+1. **Terrible People constants in platform file**: Timing constants like `HAND_SIZE`, `BOT_SUBMIT_DELAY_RANGE_MS` live in `src/lib/constants.ts`. New games should define their constants in their own `constants.ts`.
 
-2. **Terrible People constants in platform file**: Timing constants like `HAND_SIZE`, `BOT_SUBMIT_DELAY_RANGE_MS` live in `src/lib/constants.ts`. New games should define their constants in their own `constants.ts`.
+2. **Shared `hand-updated` event**: Both Terrible People and Who's Deal send `hand-updated` on the same private channel. Hooks disambiguate via `'suit' in hand[0]`. If your game sends hand data, ensure it's distinguishable or use a different event name.
 
-3. **Shared `hand-updated` event**: Both Terrible People and Who's Deal send `hand-updated` on the same private channel. Hooks disambiguate via `'suit' in hand[0]`. If your game sends hand data, ensure it's distinguishable or use a different event name.
-
-4. **Minesweeper client-side pattern**: Minesweeper runs entirely client-side (no server game logic). This works for single-player but should not be replicated for multiplayer games where competitive integrity matters.
+3. **Minesweeper client-side pattern**: Minesweeper runs entirely client-side (no server game logic). This works for single-player but should not be replicated for multiplayer games where competitive integrity matters.

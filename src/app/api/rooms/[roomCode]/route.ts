@@ -21,7 +21,7 @@ export async function GET(
   let sanitizedGame: any = null;
   if (room.game) {
     if (room.gameId === 'terrible-people') {
-      const g = room.game as import('@/lib/types').GameState;
+      const g = room.game as import('@/lib/games/terrible-people').GameState;
       sanitizedGame = {
         currentRound: g.currentRound,
         targetScore: g.targetScore,

@@ -3,7 +3,8 @@ import { getRoom, atomicRoomUpdate, refreshRoomTTL } from '@/lib/redis';
 import { getPusherServer, roomChannel, playerChannel } from '@/lib/pusher';
 import { getGameModule } from '@/lib/games/loader';
 import { roomNotFound, notOwner, apiError, invalidPhase } from '@/lib/errors';
-import type { Room, GameState } from '@/lib/types';
+import type { Room } from '@/lib/types';
+import type { GameState } from '@/lib/games/terrible-people';
 import { VALID_TARGET_SCORES } from '@/lib/games/whos-deal/constants';
 import type { WhosDealGameState } from '@/lib/games/whos-deal';
 

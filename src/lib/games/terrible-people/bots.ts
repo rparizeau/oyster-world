@@ -1,4 +1,4 @@
-import type { WhiteCard } from '@/lib/types';
+import type { WhiteCard } from './types';
 
 /**
  * Select random card IDs from a hand.

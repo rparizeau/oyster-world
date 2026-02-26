@@ -1,6 +1,7 @@
 'use client';
 
-import type { Room, WhiteCard } from '@/lib/types';
+import type { Room } from '@/lib/types';
+import type { WhiteCard } from '../types';
 import type { SanitizedGameState } from '@/app/room/[roomCode]/types';
 
 interface TerriblePeopleGameViewProps {

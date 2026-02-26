@@ -9,7 +9,7 @@ import { BOT_MOVE_DELAY_MS } from '@/lib/games/4-kate/constants';
 import type { FourKateState } from '@/lib/games/4-kate';
 import type { WhosDealGameState } from '@/lib/games/whos-deal';
 import { getBotActionTimestamp as getWDBotTimestamp } from '@/lib/games/whos-deal';
-import type { GameState } from '@/lib/types';
+import type { GameState } from '@/lib/games/terrible-people';
 
 export async function POST(request: Request) {
   let body: { roomCode?: string; playerId?: string };

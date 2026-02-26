@@ -23,7 +23,7 @@
 
 ## 3. State Types
 
-All types live in `src/lib/types.ts` (NOT in the game's own types file — this is tech debt).
+All types live in `src/lib/games/terrible-people/types.ts` and are re-exported from `src/lib/games/terrible-people/index.ts`.
 
 ```typescript
 interface GameState {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import type { Room, WhiteCard, BlackCard, GameState } from '@/lib/types';
+import type { Room } from '@/lib/types';
+import type { WhiteCard, BlackCard, GameState } from '@/lib/games/terrible-people';
 import type { SanitizedGameState } from '../types';
 import type Channel from 'pusher-js/types/src/core/channels/channel';
 

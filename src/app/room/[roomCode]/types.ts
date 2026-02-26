@@ -1,4 +1,4 @@
-import type { GameState, BlackCard, WhiteCard } from '@/lib/types';
+import type { GameState, BlackCard, WhiteCard } from '@/lib/games/terrible-people';
 
 // Sanitized game state from the server (no hands, no decks)
 export interface SanitizedGameState {

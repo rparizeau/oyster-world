@@ -7,7 +7,7 @@ import { loadCards } from '@/lib/games/terrible-people';
 import { processPlayAgain } from '@/lib/games/4-kate';
 import type { FourKateState } from '@/lib/games/4-kate';
 import { roomNotFound, notOwner, apiError, invalidPhase } from '@/lib/errors';
-import type { GameState } from '@/lib/types';
+import type { GameState } from '@/lib/games/terrible-people';
 
 export async function POST(request: Request) {
   let body: { roomCode?: string; playerId?: string };

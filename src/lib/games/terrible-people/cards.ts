@@ -1,4 +1,4 @@
-import type { BlackCard, WhiteCard } from '@/lib/types';
+import type { BlackCard, WhiteCard } from './types';
 import type { CardData } from './engine';
 import cardsJson from '../../../../data/cards.json';
 

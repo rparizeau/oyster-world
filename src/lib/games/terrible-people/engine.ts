@@ -1,4 +1,5 @@
-import type { Player, GameState, BlackCard, WhiteCard } from '@/lib/types';
+import type { Player } from '@/lib/types';
+import type { GameState, BlackCard, WhiteCard } from './types';
 import type { GameModule, GameAction, AdvancementResult } from '@/lib/games/types';
 import {
   HAND_SIZE,

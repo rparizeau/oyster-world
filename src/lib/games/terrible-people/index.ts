@@ -1,3 +1,4 @@
+export type { GameState, BlackCard, WhiteCard } from './types';
 export { terriblePeopleModule, TerriblePeopleError } from './engine';
 export {
   initializeGame,
