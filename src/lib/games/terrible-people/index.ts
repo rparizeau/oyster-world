@@ -1,4 +1,4 @@
-export { terriblePeopleModule } from './engine';
+export { terriblePeopleModule, TerriblePeopleError } from './engine';
 export {
   initializeGame,
   startSubmittingPhase,

@@ -3,12 +3,13 @@ import { getRoom, atomicRoomUpdate, refreshRoomTTL, redis } from '@/lib/redis';
 import { getGameModule } from '@/lib/games/loader';
 import { getPusherServer, roomChannel, playerChannel } from '@/lib/pusher';
 import { roomNotFound, unauthorized, apiError } from '@/lib/errors';
-import type { Room } from '@/lib/types';
+import type { Room, GameState as TPGameState } from '@/lib/types';
 import type { FourKateState } from '@/lib/games/4-kate';
 import { BOT_MOVE_DELAY_MS } from '@/lib/games/4-kate/constants';
 import { VALID_TARGET_SCORES } from '@/lib/games/whos-deal/constants';
 import type { WhosDealGameState } from '@/lib/games/whos-deal';
 import { WhosDealError, computeBotTiming, getSeatIndex, getTeamForSeat } from '@/lib/games/whos-deal';
+import { TerriblePeopleError } from '@/lib/games/terrible-people';
 
 function actionIdKey(roomCode: string, playerId: string): string {
   return `actionId:${roomCode}:${playerId}`;
@@ -292,6 +293,74 @@ async function emitWhosDealEvents(
   }
 }
 
+/**
+ * Fire Pusher events for Terrible People actions.
+ */
+async function emitTerriblePeopleEvents(
+  roomCode: string,
+  oldState: TPGameState,
+  newState: TPGameState,
+  actionType: string,
+  playerId: string,
+  players: Room['players'],
+): Promise<void> {
+  const pusher = getPusherServer();
+  const channel = roomChannel(roomCode);
+
+  try {
+    if (actionType === 'submit') {
+      await pusher.trigger(channel, 'player-submitted', { playerId });
+
+      // Phase transitioned to judging → reveal submissions
+      if (oldState.phase === 'submitting' && newState.phase === 'judging') {
+        const anonymousSubmissions = newState.revealOrder.map((id) => ({
+          id,
+          cards: newState.submissions[id],
+        }));
+
+        await pusher.trigger(channel, 'phase-changed', {
+          phase: 'judging',
+          blackCard: newState.blackCard,
+          czarId: players[newState.czarIndex]?.id,
+          czarIndex: newState.czarIndex,
+          currentRound: newState.currentRound,
+        });
+
+        await pusher.trigger(channel, 'submissions-revealed', {
+          submissions: anonymousSubmissions,
+        });
+      }
+    }
+
+    if (actionType === 'judge' && oldState.roundWinnerId === null && newState.roundWinnerId !== null) {
+      const winnerId = newState.roundWinnerId;
+      const winnerPlayer = players.find((p) => p.id === winnerId);
+      const scores: Record<string, number> = {};
+      for (const p of players) {
+        scores[p.id] = p.id === winnerId ? p.score + 1 : p.score;
+      }
+
+      await pusher.trigger(channel, 'round-result', {
+        winnerId,
+        winnerName: winnerPlayer?.name ?? 'Unknown',
+        submission: newState.submissions[winnerId],
+        scores,
+        isGameOver: newState.phase === 'game_over',
+      });
+
+      if (newState.phase === 'game_over') {
+        await pusher.trigger(channel, 'game-over', {
+          finalScores: scores,
+          winnerId,
+          winnerName: winnerPlayer?.name ?? 'Unknown',
+        });
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
 export async function POST(request: Request) {
   let body: { roomCode?: string; playerId?: string; actionId?: string; type?: string; payload?: unknown };
   try {
@@ -347,12 +416,18 @@ export async function POST(request: Request) {
     }
   }
 
-  // Dispatch to game module (catch WhosDealError for specific error responses)
+  // Inject players into TP submit/judge payloads (engine needs them for validation)
+  let enrichedPayload = payload;
+  if (room.gameId === 'terrible-people' && (type === 'submit' || type === 'judge')) {
+    enrichedPayload = { ...(payload as Record<string, unknown> || {}), _players: room.players };
+  }
+
+  // Dispatch to game module
   let newState;
   try {
-    newState = gameModule.processAction(room.game, playerId, { type, payload, actionId });
+    newState = gameModule.processAction(room.game, playerId, { type, payload: enrichedPayload, actionId });
   } catch (e) {
-    if (e instanceof WhosDealError) {
+    if (e instanceof WhosDealError || e instanceof TerriblePeopleError) {
       return apiError(e.message, e.code, e.status);
     }
     throw e;
@@ -385,9 +460,21 @@ export async function POST(request: Request) {
     }
   }
 
-  // Atomically update
+  // Atomically update (include score bump for TP judge)
+  const oldTPState = room.gameId === 'terrible-people' ? room.game as TPGameState : null;
+  const newTPState = room.gameId === 'terrible-people' ? stateToSave as unknown as TPGameState : null;
+  const tpWinnerId = (oldTPState && newTPState && type === 'judge'
+    && oldTPState.roundWinnerId === null && newTPState.roundWinnerId !== null)
+    ? newTPState.roundWinnerId : null;
+
   const updated = await atomicRoomUpdate(roomCode, (current) => {
     if (!current.game) return null;
+    if (tpWinnerId) {
+      const updatedPlayers = current.players.map((p) =>
+        p.id === tpWinnerId ? { ...p, score: p.score + 1 } : p
+      );
+      return { ...current, game: stateToSave as Room['game'], players: updatedPlayers };
+    }
     return { ...current, game: stateToSave as Room['game'] };
   });
 
@@ -441,6 +528,18 @@ export async function POST(request: Request) {
     const oldState = room.game as WhosDealGameState;
     const finalState = stateToSave as WhosDealGameState;
     await emitWhosDealEvents(roomCode, oldState, finalState, type, playerId, payload);
+  }
+
+  // Trigger Pusher events for Terrible People
+  if (room.gameId === 'terrible-people') {
+    await emitTerriblePeopleEvents(
+      roomCode,
+      room.game as TPGameState,
+      stateToSave as unknown as TPGameState,
+      type,
+      playerId,
+      room.players,
+    );
   }
 
   return NextResponse.json({ success: true });

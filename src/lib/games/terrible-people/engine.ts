@@ -12,6 +12,13 @@ import { shuffle } from '@/lib/utils';
 import { getBotActionTimestamp, selectRandomCards, selectRandomWinner } from './bots';
 import { loadCards } from './cards';
 
+export class TerriblePeopleError extends Error {
+  constructor(message: string, public code: string, public status: number = 400) {
+    super(message);
+    this.name = 'TerriblePeopleError';
+  }
+}
+
 export interface CardData {
   black: BlackCard[];
   white: WhiteCard[];
@@ -281,18 +288,32 @@ export const terriblePeopleModule: GameModule<GameState> = {
   },
 
   processAction(state: GameState, playerId: string, action: GameAction): GameState {
-    // This module's actions are handled by the existing dedicated routes
-    // The generic action route can dispatch here for future use
     switch (action.type) {
       case 'submit': {
-        const payload = action.payload as { cardIds: string[] } | undefined;
-        if (!payload?.cardIds) return state;
-        // We don't have the players array here, so this is a simplified path
-        // The dedicated routes remain the primary path for TP
-        return state;
+        const payload = action.payload as { cardIds: string[]; _players: Player[] } | undefined;
+        if (!payload?.cardIds || !payload._players) return state;
+
+        // Idempotent: already submitted
+        if (state.submissions[playerId]) return state;
+
+        const result = submitCards(state, playerId, payload.cardIds, payload._players);
+        if (!result.ok) {
+          throw new TerriblePeopleError(result.error, result.code);
+        }
+        return result.data;
       }
       case 'judge': {
-        return state;
+        const payload = action.payload as { winnerId: string; _players: Player[] } | undefined;
+        if (!payload?.winnerId || !payload._players) return state;
+
+        // Idempotent: winner already selected
+        if (state.roundWinnerId !== null) return state;
+
+        const result = judgeWinner(state, playerId, payload.winnerId, payload._players);
+        if (!result.ok) {
+          throw new TerriblePeopleError(result.error, result.code);
+        }
+        return result.state;
       }
       case 'play-again': {
         return state;

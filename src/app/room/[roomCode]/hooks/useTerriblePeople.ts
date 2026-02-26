@@ -223,10 +223,11 @@ export function useTerriblePeople(
     if (!playerId || submitting || selectedCards.length === 0) return;
     setSubmitting(true);
     try {
-      const res = await fetch('/api/game/submit', {
+      const actionId = `${playerId}-${Date.now()}`;
+      const res = await fetch('/api/game/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomCode, playerId, cardIds: selectedCards }),
+        body: JSON.stringify({ roomCode, playerId, actionId, type: 'submit', payload: { cardIds: selectedCards } }),
       });
       if (res.ok) {
         setHasSubmitted(true);
@@ -249,10 +250,11 @@ export function useTerriblePeople(
     if (!playerId || judging) return;
     setJudging(true);
     try {
-      const res = await fetch('/api/game/judge', {
+      const actionId = `${playerId}-${Date.now()}`;
+      const res = await fetch('/api/game/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomCode, playerId, winnerId }),
+        body: JSON.stringify({ roomCode, playerId, actionId, type: 'judge', payload: { winnerId } }),
       });
       if (!res.ok) {
         const data = await res.json();
