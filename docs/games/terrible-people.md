@@ -94,15 +94,16 @@ waiting --> game-started --> czar_reveal (3s auto-advance)
 
 ## 5. Action Types & Payloads
 
-This game uses **LEGACY dedicated routes**, not the generic `/api/game/action`.
+All actions use `POST /api/game/action` with `{ roomCode, playerId, actionId, type, payload }`.
 
-| Route | Body | Phase | Notes |
-|-------|------|-------|-------|
-| `POST /api/game/submit` | `{ roomCode, playerId, cardIds: string[] }` | `submitting` | Non-czar players only |
-| `POST /api/game/judge` | `{ roomCode, playerId, winnerId: string }` | `judging` | Crown (czar) only |
-| `POST /api/game/play-again` | `{ roomCode, playerId }` | `game_over` | Room owner only |
+| Type | Payload | Phase | Notes |
+|------|---------|-------|-------|
+| `submit` | `{ cardIds: string[] }` | `submitting` | Non-czar players only. Route injects `_players` for engine validation. |
+| `judge` | `{ winnerId: string }` | `judging` | Crown (czar) only. Route injects `_players` and applies score +1 atomically. |
 
-**Note for new game developers**: New games should use the generic `/api/game/action` route instead of dedicated routes.
+Play-again uses `POST /api/game/play-again` with `{ roomCode, playerId }` (room owner only).
+
+**Error handling**: Validation failures throw `TerriblePeopleError` (caught by the action route). Idempotent cases (already submitted, already judged) return state unchanged.
 
 ## 6. Pusher Events
 
@@ -143,8 +144,8 @@ This game uses **LEGACY dedicated routes**, not the generic `/api/game/action`.
   roundResult: { winnerId: string; winnerName: string; submission: WhiteCard[]; scores: Record<string, number>; isGameOver: boolean } | null;
   gameOver: { finalScores: Record<string, number>; winnerId: string; winnerName: string } | null;
   phaseKey: number;
-  handleSubmitCards: () => void;           // POST /api/game/submit
-  handleJudge: (winnerId: string) => void; // POST /api/game/judge
+  handleSubmitCards: () => void;           // POST /api/game/action type:'submit'
+  handleJudge: (winnerId: string) => void; // POST /api/game/action type:'judge'
   handlePlayAgain: () => void;             // POST /api/game/play-again
   toggleCardSelection: (cardId: string) => void;
 }
@@ -178,7 +179,7 @@ Defined in `src/lib/constants.ts` (global file, NOT game-specific — tech debt)
 | File | Purpose |
 |------|---------|
 | `src/lib/games/terrible-people/index.ts` | Module export |
-| `src/lib/games/terrible-people/engine.ts` | CAH game logic |
+| `src/lib/games/terrible-people/engine.ts` | CAH game logic + `TerriblePeopleError` |
 | `src/lib/games/terrible-people/bots.ts` | Random card selection + judging |
 | `src/lib/games/terrible-people/cards.ts` | Card data loading |
 | `src/lib/games/terrible-people/components/TerriblePeopleGameView.tsx` | Full game view |
@@ -238,6 +239,5 @@ Reference: `DESIGN_SYSTEM.md` section 7 (Terrible People).
 | getGameModule() mapping | `src/lib/games/loader.ts` |
 | GAME_DISPLAY_NAMES, SanitizedGameState re-export | `src/app/room/[roomCode]/types.ts` |
 | Rendering branch (default fallback: if playing + gameState exists) | `src/app/room/[roomCode]/page.tsx` |
-| Legacy dedicated submit route | `src/app/api/game/submit/route.ts` |
-| Legacy dedicated judge route | `src/app/api/game/judge/route.ts` |
+| Generic action route (submit, judge + Pusher events) | `src/app/api/game/action/route.ts` |
 | Play-again route (reinitializeGame, resets scores) | `src/app/api/game/play-again/route.ts` |

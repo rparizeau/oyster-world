@@ -85,8 +85,6 @@ src/
 │       ├── game/
 │       │   ├── start/route.ts              # POST — initialize game
 │       │   ├── action/route.ts             # POST — generic game action dispatch
-│       │   ├── submit/route.ts             # POST — Terrible People card submit (legacy)
-│       │   ├── judge/route.ts              # POST — Terrible People judging (legacy)
 │       │   └── play-again/route.ts         # POST — restart game
 │       └── pusher/auth/route.ts            # POST — Pusher channel auth
 ├── components/
@@ -298,18 +296,6 @@ Side effects:
 Errors: ROOM_NOT_FOUND (404), UNAUTHORIZED (401), INVALID_PHASE (409),
         NOT_OWNER (403), RACE_CONDITION (409), INVALID_GAME (400),
         + game-specific errors (see per-game docs)
-```
-
-### `POST /api/game/submit` (Terrible People legacy)
-```
-Body:    { roomCode: string, playerId: string, cardIds: string[] }
-See docs/games/terrible-people.md for details.
-```
-
-### `POST /api/game/judge` (Terrible People legacy)
-```
-Body:    { roomCode: string, playerId: string, winnerId: string }
-See docs/games/terrible-people.md for details.
 ```
 
 ### `POST /api/game/play-again`

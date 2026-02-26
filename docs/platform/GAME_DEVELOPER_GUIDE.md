@@ -139,7 +139,7 @@ Files to touch when adding a new game (11 total):
 | `src/app/api/rooms/create/route.ts` | If game needs default `settings` on room creation |
 | `src/app/room/[roomCode]/components/LobbyView.tsx` | If game has lobby settings UI (teams, difficulty, etc.) |
 
-**Note**: New games should use the generic `/api/game/action` route for all actions. Do NOT create dedicated API routes like Terrible People's legacy `/api/game/submit` and `/api/game/judge`.
+**Note**: All games use the generic `/api/game/action` route for all actions. Do NOT create dedicated API routes.
 
 ---
 
@@ -347,8 +347,6 @@ Known patterns to be aware of (not to replicate in new games):
 
 2. **Terrible People constants in platform file**: Timing constants like `HAND_SIZE`, `BOT_SUBMIT_DELAY_RANGE_MS` live in `src/lib/constants.ts`. New games should define their constants in their own `constants.ts`.
 
-3. **Legacy dedicated routes**: Terrible People uses `/api/game/submit` and `/api/game/judge` instead of the generic `/api/game/action`. New games must use `/api/game/action` exclusively.
+3. **Shared `hand-updated` event**: Both Terrible People and Who's Deal send `hand-updated` on the same private channel. Hooks disambiguate via `'suit' in hand[0]`. If your game sends hand data, ensure it's distinguishable or use a different event name.
 
-4. **Shared `hand-updated` event**: Both Terrible People and Who's Deal send `hand-updated` on the same private channel. Hooks disambiguate via `'suit' in hand[0]`. If your game sends hand data, ensure it's distinguishable or use a different event name.
-
-5. **Minesweeper client-side pattern**: Minesweeper runs entirely client-side (no server game logic). This works for single-player but should not be replicated for multiplayer games where competitive integrity matters.
+4. **Minesweeper client-side pattern**: Minesweeper runs entirely client-side (no server game logic). This works for single-player but should not be replicated for multiplayer games where competitive integrity matters.
