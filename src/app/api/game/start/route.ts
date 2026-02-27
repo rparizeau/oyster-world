@@ -7,6 +7,8 @@ import type { Room } from '@/lib/types';
 import type { GameState } from '@/lib/games/terrible-people';
 import { VALID_TARGET_SCORES } from '@/lib/games/whos-deal/constants';
 import type { WhosDealGameState } from '@/lib/games/whos-deal';
+import type { BattleshipState } from '@/lib/games/battleship';
+import { VALID_COMBOS } from '@/lib/games/battleship';
 
 export async function POST(request: Request) {
   let body: { roomCode?: string; playerId?: string; settings?: Record<string, unknown> };
@@ -57,6 +59,17 @@ export async function POST(request: Request) {
     const targetScore = settings.targetScore || 10;
     if (!(VALID_TARGET_SCORES as readonly number[]).includes(targetScore)) {
       return apiError('Invalid target score', 'INVALID_SETTING', 400);
+    }
+  }
+
+  // Battleship-specific validation
+  if (room.gameId === 'battleship') {
+    const settings = { ...room.settings, ...clientSettings };
+    const gridSize = (settings.gridSize as number) || 10;
+    const shipSet = (settings.shipSet as string) || 'classic';
+    const validSets = VALID_COMBOS[gridSize];
+    if (!validSets || !validSets.includes(shipSet)) {
+      return apiError(`Ship set "${shipSet}" is not valid for ${gridSize}x${gridSize} grid`, 'INVALID_SETTING', 400);
     }
   }
 
@@ -142,6 +155,28 @@ export async function POST(request: Request) {
         } catch {
           // Non-fatal
         }
+      }
+    }
+  } else if (room.gameId === 'battleship') {
+    // Battleship: hidden info from start — send personalized board to each player
+    const bsState = gameState as BattleshipState;
+    try {
+      await pusher.trigger(roomChannel(roomCode), 'game-started', {
+        phase: bsState.phase,
+        gridSize: bsState.gridSize,
+        setupReady: bsState.setupReady,
+        turnOrder: bsState.turnOrder,
+      });
+    } catch {
+      // Non-fatal
+    }
+    for (const p of updated.players) {
+      try {
+        await pusher.trigger(playerChannel(p.id), 'board-updated', {
+          board: gameModule.sanitizeForPlayer(bsState, p.id),
+        });
+      } catch {
+        // Non-fatal
       }
     }
   } else if (room.gameId === 'minesweeper') {

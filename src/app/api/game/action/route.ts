@@ -11,6 +11,8 @@ import { VALID_TARGET_SCORES } from '@/lib/games/whos-deal/constants';
 import type { WhosDealGameState } from '@/lib/games/whos-deal';
 import { WhosDealError, computeBotTiming, getSeatIndex, getTeamForSeat } from '@/lib/games/whos-deal';
 import { TerriblePeopleError } from '@/lib/games/terrible-people';
+import type { BattleshipState, ShotResult } from '@/lib/games/battleship';
+import { BOT_SHOT_DELAY_MS } from '@/lib/games/battleship';
 
 function actionIdKey(roomCode: string, playerId: string): string {
   return `actionId:${roomCode}:${playerId}`;
@@ -28,6 +30,52 @@ async function handleLobbyAction(
   payload: unknown,
   actionId?: string,
 ): Promise<Response | null> {
+  // Handle Battleship lobby settings
+  if (room.gameId === 'battleship' && room.status === 'waiting') {
+    if (type === 'set-grid-size' || type === 'set-ship-set') {
+      if (room.ownerId !== playerId) {
+        return apiError('Only the room owner can do this', 'NOT_OWNER', 403);
+      }
+      if (actionId) {
+        const lastActionId = await redis.get<string>(actionIdKey(roomCode, playerId));
+        if (lastActionId === actionId) return NextResponse.json({ success: true });
+      }
+      const pusher = getPusherServer();
+
+      if (type === 'set-grid-size') {
+        const { gridSize } = (payload || {}) as { gridSize?: number };
+        if (!gridSize || ![7, 8, 10].includes(gridSize)) {
+          return apiError('Invalid grid size', 'INVALID_SETTING', 400);
+        }
+        const updated = await atomicRoomUpdate(roomCode, (current) => {
+          if (current.status !== 'waiting') return null;
+          return { ...current, settings: { ...current.settings, gridSize } };
+        });
+        if (!updated) return apiError('Failed to update setting', 'RACE_CONDITION', 409);
+        if (actionId) await redis.set(actionIdKey(roomCode, playerId), actionId, { ex: 3600 });
+        await refreshRoomTTL(roomCode);
+        try { await pusher.trigger(roomChannel(roomCode), 'settings-updated', { settings: updated.settings }); } catch { /* Non-fatal */ }
+        return NextResponse.json({ success: true });
+      }
+
+      if (type === 'set-ship-set') {
+        const { shipSet } = (payload || {}) as { shipSet?: string };
+        if (!shipSet || !['classic', 'quick', 'blitz'].includes(shipSet)) {
+          return apiError('Invalid ship set', 'INVALID_SETTING', 400);
+        }
+        const updated = await atomicRoomUpdate(roomCode, (current) => {
+          if (current.status !== 'waiting') return null;
+          return { ...current, settings: { ...current.settings, shipSet } };
+        });
+        if (!updated) return apiError('Failed to update setting', 'RACE_CONDITION', 409);
+        if (actionId) await redis.set(actionIdKey(roomCode, playerId), actionId, { ex: 3600 });
+        await refreshRoomTTL(roomCode);
+        try { await pusher.trigger(roomChannel(roomCode), 'settings-updated', { settings: updated.settings }); } catch { /* Non-fatal */ }
+        return NextResponse.json({ success: true });
+      }
+    }
+  }
+
   // Only handle lobby actions for Who's Deal? in waiting state
   if (room.gameId !== 'whos-deal' || room.status !== 'waiting') return null;
   if (type !== 'swap-teams' && type !== 'set-target-score') return null;
@@ -417,9 +465,12 @@ export async function POST(request: Request) {
     }
   }
 
-  // Inject players into TP submit/judge payloads (engine needs them for validation)
+  // Inject players into payloads where engine needs them
   let enrichedPayload = payload;
   if (room.gameId === 'terrible-people' && (type === 'submit' || type === 'judge')) {
+    enrichedPayload = { ...(payload as Record<string, unknown> || {}), _players: room.players };
+  }
+  if (room.gameId === 'battleship' && type === 'place-ships') {
     enrichedPayload = { ...(payload as Record<string, unknown> || {}), _players: room.players };
   }
 
@@ -448,6 +499,18 @@ export async function POST(request: Request) {
       const nextPlayer = room.players.find((p) => p.id === nextPlayerId);
       if (nextPlayer?.isBot && !fkState.botActionAt) {
         stateToSave = { ...fkState, botActionAt: Date.now() + BOT_MOVE_DELAY_MS } as unknown as typeof newState;
+      }
+    }
+  }
+
+  // For Battleship: set botActionAt if it's now a bot's turn, inject players
+  if (room.gameId === 'battleship') {
+    const bsState = newState as BattleshipState;
+    if (bsState.phase === 'playing' && !bsState.botActionAt) {
+      const nextPlayer = room.players.find((p) => p.id === bsState.currentTurn);
+      if (nextPlayer?.isBot) {
+        const delay = Math.floor(Math.random() * (BOT_SHOT_DELAY_MS[1] - BOT_SHOT_DELAY_MS[0] + 1)) + BOT_SHOT_DELAY_MS[0];
+        stateToSave = { ...bsState, botActionAt: Date.now() + delay } as unknown as typeof newState;
       }
     }
   }
@@ -541,6 +604,56 @@ export async function POST(request: Request) {
       playerId,
       room.players,
     );
+  }
+
+  // Trigger Pusher events for Battleship
+  if (room.gameId === 'battleship') {
+    const bsOld = room.game as BattleshipState;
+    const bsNew = stateToSave as unknown as BattleshipState;
+    const pusher = getPusherServer();
+    const channel = roomChannel(roomCode);
+
+    try {
+      if (type === 'place-ships') {
+        await pusher.trigger(channel, 'setup-ready', { playerId });
+
+        // If transitioned to playing, send personalized boards
+        if (bsOld.phase === 'setup' && bsNew.phase === 'playing') {
+          const gameModule = getGameModule(room.gameId)!;
+          for (const p of room.players) {
+            await pusher.trigger(playerChannel(p.id), 'board-updated', {
+              board: gameModule.sanitizeForPlayer(bsNew, p.id),
+            });
+          }
+        }
+      }
+
+      if (type === 'fire' && bsNew.lastShot) {
+        const shot: ShotResult = bsNew.lastShot;
+        await pusher.trigger(channel, 'shot-fired', { shot });
+
+        if (shot.result === 'sunk') {
+          await pusher.trigger(channel, 'ship-sunk', { shot, shipName: shot.shipName });
+        }
+
+        // Send personalized board updates
+        const gameModule = getGameModule(room.gameId)!;
+        for (const p of room.players) {
+          await pusher.trigger(playerChannel(p.id), 'board-updated', {
+            board: gameModule.sanitizeForPlayer(bsNew, p.id),
+          });
+        }
+
+        if (bsNew.phase === 'game_over') {
+          await pusher.trigger(channel, 'game-over', {
+            winner: bsNew.winner,
+            boards: bsNew.boards,
+          });
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
   }
 
   return NextResponse.json({ success: true });

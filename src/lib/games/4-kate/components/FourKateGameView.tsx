@@ -10,10 +10,8 @@ interface FourKateGameViewProps {
   gameState: FourKateState;
   playerId: string | null;
   isOwner: boolean;
-  leaving: boolean;
   onDropPiece: (column: number) => void;
   onPlayAgain: () => void;
-  onLeave: () => void;
 }
 
 export default function FourKateGameView({
@@ -21,10 +19,8 @@ export default function FourKateGameView({
   gameState,
   playerId,
   isOwner,
-  leaving,
   onDropPiece,
   onPlayAgain,
-  onLeave,
 }: FourKateGameViewProps) {
   const { board, players, currentTurn, phase, winner, winningCells, isDraw } = gameState;
 
@@ -106,39 +102,17 @@ export default function FourKateGameView({
         </p>
 
         {/* Game Over actions */}
-        {isGameOver && (
+        {isGameOver && isOwner && (
           <div className="flex flex-col gap-3 w-full max-w-sm animate-fade-in-up mt-2">
-            {isOwner && (
-              <button
-                onClick={onPlayAgain}
-                className="btn-primary w-full text-lg"
-              >
-                Play Again
-              </button>
-            )}
             <button
-              onClick={onLeave}
-              disabled={leaving}
-              className="btn-danger w-full"
+              onClick={onPlayAgain}
+              className="btn-primary w-full text-lg"
             >
-              {leaving ? 'Leaving...' : 'Leave Game'}
+              Play Again
             </button>
           </div>
         )}
       </div>
-
-      {/* Leave button during gameplay */}
-      {!isGameOver && (
-        <div className="mt-auto pt-4">
-          <button
-            onClick={onLeave}
-            disabled={leaving}
-            className="w-full text-xs text-muted hover:text-danger transition-colors py-2"
-          >
-            {leaving ? 'Leaving...' : 'Leave Game'}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

@@ -47,7 +47,6 @@ interface WhosDealGameViewProps {
   gameState: ClientWhosDealState;
   playerId: string | null;
   isOwner: boolean;
-  leaving: boolean;
   trickWinner: { seatIndex: number; team: 'a' | 'b' } | null;
   roundSummary: {
     callingTeam: 'a' | 'b';
@@ -61,7 +60,6 @@ interface WhosDealGameViewProps {
   onDiscard: (cardId: string) => void;
   onPlayCard: (cardId: string) => void;
   onPlayAgain: () => void;
-  onLeave: () => void;
 }
 
 // ==================== HELPERS ====================
@@ -124,7 +122,6 @@ export default function WhosDealGameView({
   gameState,
   playerId,
   isOwner,
-  leaving,
   trickWinner,
   roundSummary,
   onCallTrump,
@@ -132,7 +129,6 @@ export default function WhosDealGameView({
   onDiscard,
   onPlayCard,
   onPlayAgain,
-  onLeave,
 }: WhosDealGameViewProps) {
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [goAlone, setGoAlone] = useState(false);
@@ -155,9 +151,7 @@ export default function WhosDealGameView({
         gameState={gameState}
         myTeam={myTeam}
         isOwner={isOwner}
-        leaving={leaving}
         onPlayAgain={onPlayAgain}
-        onLeave={onLeave}
       />
     );
   }
@@ -382,15 +376,6 @@ export default function WhosDealGameView({
         </div>
       )}
 
-      {/* Leave button */}
-      <button
-        onClick={onLeave}
-        disabled={leaving}
-        className="w-full text-xs py-2 mt-1 px-3 transition-colors"
-        style={{ color: 'rgba(232,230,240,.25)' }}
-      >
-        {leaving ? 'Leaving...' : 'Leave Game'}
-      </button>
     </div>
   );
 }
@@ -1060,16 +1045,12 @@ function GameOverScreen({
   gameState,
   myTeam,
   isOwner,
-  leaving,
   onPlayAgain,
-  onLeave,
 }: {
   gameState: ClientWhosDealState;
   myTeam: 'a' | 'b' | null;
   isOwner: boolean;
-  leaving: boolean;
   onPlayAgain: () => void;
-  onLeave: () => void;
 }) {
   const winner = gameState.winningTeam;
   const teamAScore = gameState.teams.a.score;
@@ -1097,23 +1078,16 @@ function GameOverScreen({
         After {gameState.roundsPlayed} round{gameState.roundsPlayed !== 1 ? 's' : ''}
       </p>
 
-      <div className="flex gap-3 mt-8 min-h-[52px]">
-        {isOwner && (
+      {isOwner && (
+        <div className="flex gap-3 mt-8 min-h-[52px]">
           <button
             onClick={onPlayAgain}
             className="btn-primary px-8 py-3 rounded-full"
           >
             Play Again
           </button>
-        )}
-        <button
-          onClick={onLeave}
-          disabled={leaving}
-          className="btn-danger px-8 py-3 rounded-full disabled:opacity-50"
-        >
-          {leaving ? 'Leaving...' : 'Leave Game'}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

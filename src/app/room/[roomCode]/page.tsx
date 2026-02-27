@@ -6,6 +6,7 @@ import FourKateGameView from '@/lib/games/4-kate/components/FourKateGameView';
 import WhosDealGameView from '@/lib/games/whos-deal/components/WhosDealGameView';
 import TerriblePeopleGameView from '@/lib/games/terrible-people/components/TerriblePeopleGameView';
 import MinesweeperGameView from '@/lib/games/minesweeper/components/MinesweeperGameView';
+import BattleshipGameView from '@/lib/games/battleship/components/BattleshipGameView';
 import DeepBar from '@/components/DeepBar';
 
 import { GAME_DISPLAY_NAMES } from './types';
@@ -15,6 +16,7 @@ import { useFourKate } from './hooks/useFourKate';
 import { useTerriblePeople } from './hooks/useTerriblePeople';
 import { useWhosDeal } from './hooks/useWhosDeal';
 import { useMinesweeper } from './hooks/useMinesweeper';
+import { useBattleship } from './hooks/useBattleship';
 import type { Difficulty } from '@/lib/games/minesweeper/types';
 
 import ToastContainer from './components/ToastContainer';
@@ -68,6 +70,12 @@ export default function RoomPage() {
     handleSwapTeams, handleSetTargetScore,
   } = useWhosDeal(roomCode, playerId, room, roomCh, playerCh, setRoom, addToast);
 
+  const {
+    battleshipState,
+    handlePlaceShips,
+    handleFire,
+  } = useBattleship(roomCode, playerId, room, roomCh, playerCh, setRoom, addToast);
+
   // Minesweeper — client-side game state
   const minesweeperDifficulty: Difficulty =
     (room?.game as { difficulty?: Difficulty } | null)?.difficulty || 'easy';
@@ -112,7 +120,7 @@ export default function RoomPage() {
     }
   }
 
-  async function handleChangeDifficulty() {
+  async function handleReturnToLobby() {
     if (!playerId) return;
     // Immediately update local state to show lobby
     setRoom((prev) => prev ? { ...prev, status: 'waiting' as const, game: null } : prev);
@@ -197,7 +205,7 @@ export default function RoomPage() {
           actionLabel="Lobby"
           showAction={true}
           onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
-          onAction={() => {/* Placeholder — persistent lobby is Update 2 */}}
+          onAction={handleReturnToLobby}
         />
         <ScoreBar
           teams={whosDealState.teams}
@@ -210,7 +218,6 @@ export default function RoomPage() {
             gameState={whosDealState}
             playerId={playerId}
             isOwner={isOwner}
-            leaving={leaving}
             trickWinner={wdTrickWinner}
             roundSummary={wdRoundSummary}
             onCallTrump={handleWDCallTrump}
@@ -218,7 +225,34 @@ export default function RoomPage() {
             onDiscard={handleWDDiscard}
             onPlayCard={handleWDPlayCard}
             onPlayAgain={handleWDPlayAgain}
-            onLeave={handleLeave}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Battleship game view
+  if (room.status === 'playing' && battleshipState && room.gameId === 'battleship') {
+    return (
+      <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
+        <ToastContainer toasts={toasts} />
+        <ConnectionBanner status={connectionStatus} />
+        <DeepBar
+          gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+          actionLabel="Lobby"
+          showAction={true}
+          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
+          onAction={handleReturnToLobby}
+        />
+        <div className="flex-1">
+          <BattleshipGameView
+            room={room}
+            battleshipState={battleshipState}
+            playerId={playerId}
+            isOwner={isOwner}
+            onPlaceShips={handlePlaceShips}
+            onFire={handleFire}
+            onPlayAgain={handleReturnToLobby}
           />
         </div>
       </div>
@@ -233,8 +267,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          showAction={false}
+          actionLabel="Lobby"
+          showAction={true}
           onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
+          onAction={handleReturnToLobby}
         />
         <MinesweeperGameView
           game={minesweeper.game}
@@ -247,8 +283,7 @@ export default function RoomPage() {
           getLongPressHandlers={minesweeper.getLongPressHandlers}
           handleCellClick={minesweeper.handleCellClick}
           handleRightClick={minesweeper.handleRightClick}
-          onLeave={handleLeave}
-          onChangeDifficulty={handleChangeDifficulty}
+          onChangeDifficulty={handleReturnToLobby}
         />
       </div>
     );
@@ -265,7 +300,7 @@ export default function RoomPage() {
           actionLabel="Lobby"
           showAction={true}
           onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
-          onAction={() => {/* Placeholder — persistent lobby is Update 2 */}}
+          onAction={handleReturnToLobby}
         />
         <div className="flex-1">
           <FourKateGameView
@@ -273,10 +308,8 @@ export default function RoomPage() {
             gameState={fourKateState}
             playerId={playerId}
             isOwner={isOwner}
-            leaving={leaving}
             onDropPiece={handleDropPiece}
             onPlayAgain={handlePlayAgain}
-            onLeave={handleLeave}
           />
         </div>
       </div>
@@ -294,7 +327,7 @@ export default function RoomPage() {
           actionLabel="Lobby"
           showAction={true}
           onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
-          onAction={() => {/* Placeholder — persistent lobby is Update 2 */}}
+          onAction={handleReturnToLobby}
         />
         <div className="flex-1">
           <TerriblePeopleGameView
@@ -311,13 +344,11 @@ export default function RoomPage() {
             revealedSubmissions={revealedSubmissions}
             roundResult={roundResult}
             gameOver={gameOver}
-            leaving={leaving}
             phaseKey={phaseKey}
             onToggleCard={toggleCardSelection}
             onSubmit={handleSubmitCards}
             onJudge={handleJudge}
             onPlayAgain={handlePlayAgain}
-            onLeave={handleLeave}
           />
         </div>
       </div>

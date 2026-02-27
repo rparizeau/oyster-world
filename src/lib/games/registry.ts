@@ -34,11 +34,19 @@ export const GAME_REGISTRY: GameConfig[] = [
   },
   {
     id: 'minesweeper',
-    name: 'Minesweeper',
-    description: 'Classic Minesweeper. Find the mines. Clear the board.',
+    name: 'Land Mines',
+    description: 'Dodge the mines. Clear the board.',
     minPlayers: 1,
     maxPlayers: 1,
     icon: '💣',
+  },
+  {
+    id: 'battleship',
+    name: 'Battleship',
+    description: 'Place your fleet. Sink the enemy. Rule the sea.',
+    minPlayers: 2,
+    maxPlayers: 2,
+    icon: '🚢',
   },
 ];
 

@@ -18,13 +18,11 @@ interface TerriblePeopleGameViewProps {
   revealedSubmissions: { id: string; cards: WhiteCard[] }[];
   roundResult: { winnerId: string; winnerName: string; submission: WhiteCard[]; scores: Record<string, number>; isGameOver: boolean } | null;
   gameOver: { finalScores: Record<string, number>; winnerId: string; winnerName: string } | null;
-  leaving: boolean;
   phaseKey: number;
   onToggleCard: (cardId: string) => void;
   onSubmit: () => void;
   onJudge: (winnerId: string) => void;
   onPlayAgain: () => void;
-  onLeave: () => void;
 }
 
 export default function TerriblePeopleGameView({
@@ -41,13 +39,11 @@ export default function TerriblePeopleGameView({
   revealedSubmissions,
   roundResult,
   gameOver,
-  leaving,
   phaseKey,
   onToggleCard,
   onSubmit,
   onJudge,
   onPlayAgain,
-  onLeave,
 }: TerriblePeopleGameViewProps) {
   const czar = room.players[gameState.czarIndex];
   const phase = gameState.phase;
@@ -60,9 +56,7 @@ export default function TerriblePeopleGameView({
         roundResult={roundResult}
         gameOver={gameOver}
         isOwner={isOwner}
-        leaving={leaving}
         onPlayAgain={onPlayAgain}
-        onLeave={onLeave}
       />
     );
   }
@@ -176,16 +170,6 @@ export default function TerriblePeopleGameView({
         )}
       </div>
 
-      {/* Leave button - minimal at bottom */}
-      <div className="mt-auto pt-4">
-        <button
-          onClick={onLeave}
-          disabled={leaving}
-          className="w-full text-xs text-muted hover:text-danger transition-colors py-2"
-        >
-          {leaving ? 'Leaving...' : 'Leave Game'}
-        </button>
-      </div>
     </div>
   );
 }
@@ -414,17 +398,13 @@ function GameOverView({
   roundResult,
   gameOver,
   isOwner,
-  leaving,
   onPlayAgain,
-  onLeave,
 }: {
   room: Room;
   roundResult: { winnerId: string; winnerName: string; submission: WhiteCard[]; scores: Record<string, number>; isGameOver: boolean } | null;
   gameOver: { finalScores: Record<string, number>; winnerId: string; winnerName: string } | null;
   isOwner: boolean;
-  leaving: boolean;
   onPlayAgain: () => void;
-  onLeave: () => void;
 }) {
   const scores = gameOver?.finalScores ?? roundResult?.scores ?? {};
   const winnerName = gameOver?.winnerName ?? roundResult?.winnerName ?? 'Unknown';
@@ -516,23 +496,16 @@ function GameOverView({
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col gap-3 w-full max-w-sm">
-        {isOwner && (
+      {isOwner && (
+        <div className="flex flex-col gap-3 w-full max-w-sm">
           <button
             onClick={onPlayAgain}
             className="btn-primary w-full text-lg"
           >
             Play Again
           </button>
-        )}
-        <button
-          onClick={onLeave}
-          disabled={leaving}
-          className="btn-danger w-full"
-        >
-          {leaving ? 'Leaving...' : 'Leave Game'}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

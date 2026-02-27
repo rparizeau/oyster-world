@@ -78,6 +78,14 @@ export async function POST(request: Request) {
     };
   }
 
+  // Initialize default settings for Battleship
+  if (gameId === 'battleship') {
+    room.settings = {
+      gridSize: 10,
+      shipSet: 'classic',
+    };
+  }
+
   // Initialize default settings for Minesweeper
   if (gameId === 'minesweeper') {
     room.settings = {

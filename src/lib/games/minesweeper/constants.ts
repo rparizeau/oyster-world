@@ -7,8 +7,6 @@ export const MAX_COLS = 20;
 export const MIN_ROWS = 10;
 export const MAX_ROWS = 24;
 export const GRID_PADDING = 16;
-export const DEEPBAR_HEIGHT = 48;
-export const HEADER_HEIGHT = 52;
 export const BOTTOM_PADDING = 16;
 
 // Mine density per difficulty

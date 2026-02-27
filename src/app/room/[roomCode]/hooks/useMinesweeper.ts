@@ -13,7 +13,7 @@ function minesweeperReducer(
 ): MinesweeperGameState {
   switch (action.type) {
     case 'init': {
-      const { rows, cols, cellSize, mineCount } = calculateGrid(action.containerWidth, action.viewportHeight, action.difficulty);
+      const { rows, cols, cellSize, mineCount } = calculateGrid(action.containerWidth, action.containerHeight, action.difficulty);
       const totalCells = rows * cols;
       return {
         rows,
@@ -218,7 +218,7 @@ function minesweeperReducer(
     case 'new-game': {
       const { rows, cols, cellSize, mineCount } = calculateGrid(
         action.containerWidth,
-        action.viewportHeight,
+        action.containerHeight,
         state.difficulty,
       );
       const totalCells = rows * cols;
@@ -291,21 +291,21 @@ export function useMinesweeper(difficulty: Difficulty) {
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
   const [pressingIndex, setPressingIndex] = useState<number | null>(null);
 
-  // Called by the game view after measuring its container width
-  const initGrid = useCallback((containerWidth: number) => {
+  // Called by the game view after measuring its container
+  const initGrid = useCallback((containerWidth: number, containerHeight: number) => {
     dispatch({
       type: 'init',
       containerWidth,
-      viewportHeight: window.innerHeight,
+      containerHeight,
       difficulty,
     });
   }, [difficulty]);
 
-  const resetGrid = useCallback((containerWidth: number) => {
+  const resetGrid = useCallback((containerWidth: number, containerHeight: number) => {
     dispatch({
       type: 'new-game',
       containerWidth,
-      viewportHeight: window.innerHeight,
+      containerHeight,
     });
   }, []);
 

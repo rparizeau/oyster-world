@@ -36,8 +36,8 @@ const GAMES: GameCardInfo[] = [
   },
   {
     id: 'minesweeper',
-    name: 'Minesweeper',
-    description: 'Classic Minesweeper. Find the mines. Clear the board.',
+    name: 'Land Mines',
+    description: 'Dodge the mines. Clear the board.',
     icon: '💣',
     maxPlayers: 1,
   },

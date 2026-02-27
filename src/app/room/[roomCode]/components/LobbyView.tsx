@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import type { Room } from '@/lib/types';
 import { getGameConfig } from '@/lib/games/registry';
 import type { Difficulty } from '@/lib/games/minesweeper/types';
+import { SHIP_SETS, VALID_COMBOS } from '@/lib/games/battleship/constants';
 import PlayerCard from './PlayerCard';
 import WhosDealTeamAssignment from './WhosDealTeamAssignment';
 
@@ -35,12 +36,56 @@ export default function LobbyView({
   const gameConfig = getGameConfig(room.gameId);
   const isSinglePlayer = gameConfig?.maxPlayers === 1;
   const isMinesweeper = room.gameId === 'minesweeper';
+  const isBattleship = room.gameId === 'battleship';
   const teams = room.settings?.teams as { a: string[]; b: string[] } | undefined;
   const targetScore = (room.settings?.targetScore as number) || 10;
 
   const [difficulty, setDifficulty] = useState<Difficulty>(
     (room.settings?.difficulty as Difficulty) || 'easy',
   );
+
+  const [bsGridSize, setBsGridSize] = useState<number>(
+    (room.settings?.gridSize as number) || 10,
+  );
+  const [bsShipSet, setBsShipSet] = useState<string>(
+    (room.settings?.shipSet as string) || 'classic',
+  );
+
+  const handleSetGridSize = useCallback(async (gridSize: number) => {
+    setBsGridSize(gridSize);
+    // If current ship set is invalid for new grid size, auto-correct
+    const validSets = VALID_COMBOS[gridSize] || [];
+    if (!validSets.includes(bsShipSet)) {
+      const newSet = validSets[0] || 'classic';
+      setBsShipSet(newSet);
+      // Fire both updates
+      try {
+        await fetch('/api/game/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomCode: room.roomCode, playerId, type: 'set-ship-set', payload: { shipSet: newSet } }),
+        });
+      } catch { /* Non-fatal */ }
+    }
+    try {
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomCode: room.roomCode, playerId, type: 'set-grid-size', payload: { gridSize } }),
+      });
+    } catch { /* Non-fatal */ }
+  }, [room.roomCode, playerId, bsShipSet]);
+
+  const handleSetShipSet = useCallback(async (shipSet: string) => {
+    setBsShipSet(shipSet);
+    try {
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomCode: room.roomCode, playerId, type: 'set-ship-set', payload: { shipSet } }),
+      });
+    } catch { /* Non-fatal */ }
+  }, [room.roomCode, playerId]);
 
   return (
     <div className="flex flex-col items-center gap-6 p-4 pt-4 pb-6 animate-fade-in">
@@ -143,11 +188,88 @@ export default function LobbyView({
         </div>
       )}
 
+      {/* Battleship Settings */}
+      {isBattleship && (
+        <div className="w-full max-w-sm space-y-4">
+          {/* Grid Size */}
+          <div>
+            <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold mb-3" style={{ color: 'rgba(232,230,240,.25)' }}>Grid Size</h2>
+            <div className="flex gap-1.5">
+              {([10, 8, 7] as const).map((size) => {
+                const labels: Record<number, string> = { 10: '10x10 Classic', 8: '8x8 Compact', 7: '7x7 Quick' };
+                return (
+                  <button
+                    key={size}
+                    onClick={() => isOwner && handleSetGridSize(size)}
+                    disabled={!isOwner}
+                    className="flex-1 rounded-lg py-2.5 text-sm font-bold transition-all min-h-[44px]"
+                    style={bsGridSize === size
+                      ? { border: '2px solid var(--pearl)', background: 'rgba(240,194,127,.06)', color: 'var(--pearl)' }
+                      : { border: '2px solid rgba(255,255,255,.05)', background: 'rgba(255,255,255,.02)', color: 'rgba(232,230,240,.35)' }
+                    }
+                  >
+                    {labels[size]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Ship Set */}
+          <div>
+            <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold mb-3" style={{ color: 'rgba(232,230,240,.25)' }}>Ships</h2>
+            <div className="flex gap-1.5">
+              {(['classic', 'quick', 'blitz'] as const).map((setName) => {
+                const validSets = VALID_COMBOS[bsGridSize] || [];
+                const isValid = validSets.includes(setName);
+                const labels: Record<string, string> = { classic: 'Classic', quick: 'Quick', blitz: 'Blitz' };
+                const counts: Record<string, number> = { classic: 5, quick: 4, blitz: 3 };
+                return (
+                  <button
+                    key={setName}
+                    onClick={() => isOwner && isValid && handleSetShipSet(setName)}
+                    disabled={!isOwner || !isValid}
+                    className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition-all min-h-[44px] ${
+                      !isValid ? 'opacity-30 cursor-not-allowed' : ''
+                    }`}
+                    style={bsShipSet === setName && isValid
+                      ? { border: '2px solid var(--pearl)', background: 'rgba(240,194,127,.06)', color: 'var(--pearl)' }
+                      : { border: '2px solid rgba(255,255,255,.05)', background: 'rgba(255,255,255,.02)', color: 'rgba(232,230,240,.35)' }
+                    }
+                  >
+                    <div>{labels[setName]}</div>
+                    <div className="text-[0.65em] font-normal opacity-60">{counts[setName]} ships</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Ship preview */}
+          <div className="flex gap-2 justify-center flex-wrap">
+            {(SHIP_SETS[bsShipSet] || SHIP_SETS.classic).map((ship) => (
+              <div key={ship.id} className="flex items-center gap-1">
+                <span className="text-[0.6rem] text-muted">{ship.name}</span>
+                <span className="flex gap-0.5">
+                  {Array.from({ length: ship.size }).map((_, i) => (
+                    <span key={i} className="w-2 h-2 rounded-full" style={{ background: 'rgba(126,184,212,.4)' }} />
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex flex-col gap-2 w-full max-w-sm">
         {isOwner ? (
           <button
-            onClick={() => isMinesweeper ? onStartGame({ difficulty }) : onStartGame()}
+            onClick={() => {
+              if (isMinesweeper) return onStartGame({ difficulty });
+              if (isBattleship) return onStartGame({ gridSize: bsGridSize, shipSet: bsShipSet });
+              return onStartGame();
+            }}
             disabled={starting}
             className="btn-primary flex items-center justify-center gap-2 text-lg"
           >

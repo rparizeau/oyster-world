@@ -35,9 +35,9 @@ export interface MinesweeperSettings {
 }
 
 export type MinesweeperAction =
-  | { type: 'init'; containerWidth: number; viewportHeight: number; difficulty: Difficulty }
+  | { type: 'init'; containerWidth: number; containerHeight: number; difficulty: Difficulty }
   | { type: 'reveal'; index: number }
   | { type: 'flag'; index: number }
   | { type: 'chord'; index: number }
-  | { type: 'new-game'; containerWidth: number; viewportHeight: number }
+  | { type: 'new-game'; containerWidth: number; containerHeight: number }
   | { type: 'tick' };

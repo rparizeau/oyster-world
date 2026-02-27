@@ -3,20 +3,17 @@ import {
   MIN_CELL_SIZE,
   MIN_COLS, MAX_COLS,
   MIN_ROWS, MAX_ROWS,
-  DEEPBAR_HEIGHT,
-  HEADER_HEIGHT,
   BOTTOM_PADDING,
   MINE_DENSITY,
 } from './constants';
 
 export function calculateGrid(
   containerWidth: number,
-  viewportHeight: number,
+  containerHeight: number,
   difficulty: Difficulty,
 ): { rows: number; cols: number; cellSize: number; mineCount: number } {
-  // containerWidth is the measured width of the actual grid container (respects max-w-lg + padding)
   const availW = containerWidth;
-  const availH = viewportHeight - DEEPBAR_HEIGHT - HEADER_HEIGHT - BOTTOM_PADDING;
+  const availH = containerHeight - BOTTOM_PADDING;
 
   // Account for 1px gap between cells: cols * cellSize + (cols - 1) * 1px ≤ availW
   // Solving: cols ≤ (availW + 1) / (MIN_CELL_SIZE + 1)

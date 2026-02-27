@@ -10,8 +10,8 @@ interface MinesweeperGameViewProps {
   displayTime: string;
   minesRemaining: number;
   pressingIndex: number | null;
-  initGrid: (containerWidth: number) => void;
-  resetGrid: (containerWidth: number) => void;
+  initGrid: (containerWidth: number, containerHeight: number) => void;
+  resetGrid: (containerWidth: number, containerHeight: number) => void;
   getLongPressHandlers: (index: number) => {
     onTouchStart: (e: React.TouchEvent) => void;
     onTouchMove: (e: React.TouchEvent) => void;
@@ -19,7 +19,6 @@ interface MinesweeperGameViewProps {
   };
   handleCellClick: (index: number) => void;
   handleRightClick: (index: number, e: React.MouseEvent) => void;
-  onLeave: () => void;
   onChangeDifficulty: () => void;
 }
 
@@ -34,22 +33,29 @@ export default function MinesweeperGameView({
   getLongPressHandlers,
   handleCellClick,
   handleRightClick,
-  onLeave,
   onChangeDifficulty,
 }: MinesweeperGameViewProps) {
   const isGameOver = game.phase === 'won' || game.phase === 'lost';
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const PADDING = 16; // horizontal padding each side for the grid
+
   // Measure the actual container and initialize the grid on mount
   useEffect(() => {
     if (containerRef.current) {
-      initGrid(containerRef.current.clientWidth);
+      initGrid(
+        containerRef.current.clientWidth - PADDING * 2,
+        containerRef.current.clientHeight,
+      );
     }
   }, [initGrid]);
 
   const handlePlayAgain = () => {
     if (containerRef.current) {
-      resetGrid(containerRef.current.clientWidth);
+      resetGrid(
+        containerRef.current.clientWidth - PADDING * 2,
+        containerRef.current.clientHeight,
+      );
     }
   };
 
@@ -59,8 +65,8 @@ export default function MinesweeperGameView({
     : 0;
 
   return (
-    <div className="flex-1 flex flex-col max-w-lg mx-auto w-full overflow-x-hidden">
-      {/* Header — mine counter + timer */}
+    <div className="flex-1 flex flex-col w-full overflow-hidden">
+      {/* Header — mine counter + timer (full-width) */}
       <div
         className="flex items-center justify-between px-4 py-2.5"
         style={{
@@ -76,8 +82,8 @@ export default function MinesweeperGameView({
         </span>
       </div>
 
-      {/* Grid area — ref for measurement, always renders so ref is available */}
-      <div ref={containerRef} className="relative flex-1 flex items-start justify-center px-4 pt-2">
+      {/* Grid area — ref for measurement, no padding so measurement is accurate */}
+      <div ref={containerRef} className="relative flex-1 flex items-start justify-center overflow-hidden">
         {game.cols > 0 && (
           <>
             {/* Grid */}
@@ -143,12 +149,6 @@ export default function MinesweeperGameView({
                     className="bg-gray-700 hover:bg-gray-600 text-white rounded-full px-6 py-2 min-h-[44px] text-center"
                   >
                     Change Difficulty
-                  </button>
-                  <button
-                    onClick={onLeave}
-                    className="border border-star/20 text-star rounded-full px-6 py-2 min-h-[44px] text-center hover:border-star/40 hover:bg-star/5 text-sm"
-                  >
-                    Leave Game
                   </button>
                 </div>
               </div>
