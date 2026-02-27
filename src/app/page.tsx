@@ -41,6 +41,13 @@ const GAMES: GameCardInfo[] = [
     icon: '💣',
     maxPlayers: 1,
   },
+  {
+    id: 'battleship',
+    name: 'Battleship',
+    description: 'Place your fleet. Sink the enemy. Rule the sea.',
+    icon: '🚢',
+    maxPlayers: 2,
+  },
 ];
 
 type Mode = 'home' | 'create-name' | 'create-game' | 'loading' | 'join';
