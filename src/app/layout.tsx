@@ -22,7 +22,7 @@ const quicksand = Quicksand({
 
 export const metadata: Metadata = {
   title: "My Oyster World",
-  description: "Every game is a pearl.",
+  description: "Your world, your games.",
 };
 
 export const viewport: Viewport = {

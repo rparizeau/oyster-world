@@ -163,7 +163,7 @@ export default function HomePage() {
           </div>
           <h1 className="font-display text-[2em] text-cream mb-1">My Oyster World</h1>
           <p className="text-sm font-semibold mb-8" style={{ color: 'rgba(240,194,127,.6)' }}>
-            Every game is a pearl.
+            Your world, your games.
           </p>
           <div className="flex flex-col gap-3 w-full max-w-[260px]">
             <button
@@ -181,7 +181,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="absolute bottom-0 left-0 right-0 py-3.5 text-center text-[0.65em] font-semibold" style={{ color: 'rgba(240,194,127,.18)' }}>
-          We make pearls faster than oysters.
+          We make games faster than oysters.
         </div>
       </div>
     );
@@ -314,7 +314,7 @@ export default function HomePage() {
           <div className="mb-5">
             <PearlGlobe size={56} animate="pulse" />
           </div>
-          <h1 className="font-display text-[1.3em] text-pearl mb-1">Cracking open your pearl...</h1>
+          <h1 className="font-display text-[1.3em] text-pearl mb-1">Getting things ready...</h1>
           <p className="text-[0.78em]" style={{ color: 'rgba(232,230,240,.22)' }}>
             {gameName} &middot; {gameMax} players
           </p>
@@ -342,9 +342,9 @@ export default function HomePage() {
         <div className="mb-3.5">
           <PearlGlobe size={48} animate="float" />
         </div>
-        <h1 className="font-display text-[1.5em] text-pearl mb-1">Pick a Pearl</h1>
+        <h1 className="font-display text-[1.5em] text-pearl mb-1">Choose your Game</h1>
         <p className="text-[0.82em] mb-5" style={{ color: 'rgba(245,230,202,.4)' }}>
-          Each game is a treasure. Choose yours.
+          Invite your friends to play!
         </p>
       </div>
 
@@ -363,7 +363,7 @@ export default function HomePage() {
           disabled={loading}
           className="btn-primary flex items-center justify-center gap-2"
         >
-          Crack It Open
+          Let's Go!
         </button>
 
         <button
@@ -537,13 +537,6 @@ function PearlCarousel({
                       {game.name}
                     </span>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      <span style={{
-                        fontSize: '0.5em', fontWeight: 700, letterSpacing: '0.5px',
-                        background: 'rgba(240,194,127,.1)', color: 'var(--pearl)',
-                        padding: '3px 9px', borderRadius: '6px',
-                      }}>
-                        ✦ PEARL
-                      </span>
                       <span style={{
                         fontSize: '0.62em', fontWeight: 700,
                         background: 'rgba(126,184,212,.1)', color: 'var(--shallow-water)',
