@@ -34,6 +34,9 @@ export default function RoomPage() {
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [steppedOut, setSteppedOut] = useState(false);
+  const [stepOutTime, setStepOutTime] = useState<number | null>(null);
+  const stepOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Hooks ---
   const { toasts, addToast } = useToasts();
@@ -165,6 +168,32 @@ export default function RoomPage() {
     setTimeout(() => setCopied(null), 2000);
   }
 
+  function handleStepOut() {
+    setSteppedOut(true);
+    setStepOutTime(Date.now());
+    stepOutTimerRef.current = setTimeout(() => {
+      handleLeave();
+    }, 30_000);
+  }
+
+  function handleStepIn() {
+    if (stepOutTimerRef.current) {
+      clearTimeout(stepOutTimerRef.current);
+      stepOutTimerRef.current = null;
+    }
+    setSteppedOut(false);
+    setStepOutTime(null);
+  }
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (stepOutTimerRef.current) {
+        clearTimeout(stepOutTimerRef.current);
+      }
+    };
+  }, []);
+
   // --- Renders ---
 
   // Loading skeleton
@@ -213,6 +242,40 @@ export default function RoomPage() {
 
   const isOwner = playerId === room.ownerId;
 
+  // Stepped-out lobby view (game still in progress)
+  if (steppedOut && room.status === 'playing') {
+    return (
+      <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
+        <ToastContainer toasts={toasts} />
+        <ConnectionBanner status={connectionStatus} />
+        <DeepBar
+          gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+          actionLabel="Leave"
+          showAction={false}
+          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
+        />
+        <div className="flex-1">
+          <LobbyView
+            room={room}
+            playerId={playerId}
+            isOwner={isOwner}
+            starting={starting}
+            leaving={leaving}
+            copied={copied}
+            onCopy={handleCopy}
+            onStartGame={handleStartGame}
+            onLeave={handleLeave}
+            onSwapTeams={handleSwapTeams}
+            onSetTargetScore={handleSetTargetScore}
+            gameInProgress
+            onRejoin={handleStepIn}
+            stepOutTime={stepOutTime}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Who's Deal? game view
   if (room.status === 'playing' && whosDealState && room.gameId === 'whos-deal') {
     const myTeam = whosDealState.teams.a.playerIds.includes(playerId ?? '') ? 'a' : 'b';
@@ -222,10 +285,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Games"
+          actionLabel="Lobby"
           showAction={true}
           onHome={handleLeave}
-          onAction={handleLeave}
+          onAction={handleStepOut}
         />
         <ScoreBar
           teams={whosDealState.teams}
@@ -259,10 +322,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Games"
+          actionLabel="Lobby"
           showAction={true}
           onHome={handleLeave}
-          onAction={handleLeave}
+          onAction={handleStepOut}
         />
         <div className="flex-1">
           <BattleshipGameView
@@ -285,7 +348,7 @@ export default function RoomPage() {
       <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Games"
+          actionLabel="Lobby"
           showAction={true}
           onHome={handleLeave}
           onAction={handleLeave}
@@ -335,10 +398,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Games"
+          actionLabel="Lobby"
           showAction={true}
           onHome={handleLeave}
-          onAction={handleLeave}
+          onAction={handleReturnToLobby}
         />
         <MinesweeperGameView
           game={minesweeper.game}
@@ -365,10 +428,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Games"
+          actionLabel="Lobby"
           showAction={true}
           onHome={handleLeave}
-          onAction={handleLeave}
+          onAction={handleStepOut}
         />
         <div className="flex-1">
           <FourKateGameView
@@ -392,10 +455,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Games"
+          actionLabel="Lobby"
           showAction={true}
           onHome={handleLeave}
-          onAction={handleLeave}
+          onAction={handleStepOut}
         />
         <div className="flex-1">
           <TerriblePeopleGameView

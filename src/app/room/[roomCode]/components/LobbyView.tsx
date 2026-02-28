@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Room } from '@/lib/types';
 import { getGameConfig } from '@/lib/games/registry';
 import type { Difficulty } from '@/lib/games/minesweeper/types';
@@ -18,6 +18,9 @@ export default function LobbyView({
   onLeave,
   onSwapTeams,
   onSetTargetScore,
+  gameInProgress = false,
+  onRejoin,
+  stepOutTime,
 }: {
   room: Room;
   playerId: string | null;
@@ -30,6 +33,9 @@ export default function LobbyView({
   onLeave: () => void;
   onSwapTeams: (playerIdA: string, playerIdB: string) => void;
   onSetTargetScore: (targetScore: number) => void;
+  gameInProgress?: boolean;
+  onRejoin?: () => void;
+  stepOutTime?: number | null;
 }) {
   const humanCount = room.players.filter((p) => !p.isBot).length;
   const isWhosDeal = room.gameId === 'whos-deal';
@@ -50,6 +56,19 @@ export default function LobbyView({
   const [bsShipSet, setBsShipSet] = useState<string>(
     (room.settings?.shipSet as string) || 'classic',
   );
+
+  // Countdown for step-out timer
+  const [secondsLeft, setSecondsLeft] = useState(30);
+  useEffect(() => {
+    if (!gameInProgress || stepOutTime == null) return;
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - stepOutTime) / 1000);
+      setSecondsLeft(Math.max(0, 30 - elapsed));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [gameInProgress, stepOutTime]);
 
   const handleSetGridSize = useCallback(async (gridSize: number) => {
     setBsGridSize(gridSize);
@@ -87,6 +106,62 @@ export default function LobbyView({
     } catch { /* Non-fatal */ }
   }, [room.roomCode, playerId]);
 
+  // --- Game in progress (stepped-out) mode ---
+  if (gameInProgress) {
+    return (
+      <div className="flex flex-col items-center gap-6 p-4 pt-4 pb-6 animate-fade-in">
+        {/* Game in progress banner */}
+        <div className="w-full max-w-sm text-center pt-2">
+          <div
+            className="rounded-xl border px-4 py-5"
+            style={{ borderColor: 'rgba(240,194,127,.2)', background: 'rgba(240,194,127,.04)' }}
+          >
+            <div className="text-[0.62em] uppercase tracking-[3px] font-bold mb-2" style={{ color: 'rgba(240,194,127,.5)' }}>
+              Game in Progress
+            </div>
+            <div className="font-display text-[2em] text-pearl tabular-nums">
+              0:{secondsLeft.toString().padStart(2, '0')}
+            </div>
+            <p className="text-[0.78em] mt-1" style={{ color: 'rgba(232,230,240,.35)' }}>
+              You&apos;ll be replaced by a bot when the timer runs out
+            </p>
+          </div>
+        </div>
+
+        {/* Player list */}
+        <div className="w-full max-w-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold" style={{ color: 'rgba(232,230,240,.25)' }}>Players</h2>
+            <span className="text-[0.65em] font-bold" style={{ color: 'rgba(232,230,240,.25)' }}>{humanCount}/{room.players.length} humans</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {room.players.map((player, i) => (
+              <PlayerCard key={player.id} player={player} isOwnerPlayer={player.id === room.ownerId} index={i} />
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-col gap-2 w-full max-w-sm">
+          <button
+            onClick={onRejoin}
+            className="btn-primary text-lg"
+          >
+            Rejoin Game
+          </button>
+          <button
+            onClick={onLeave}
+            disabled={leaving}
+            className="btn-danger"
+          >
+            {leaving ? 'Leaving...' : 'Leave Room'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Normal lobby mode ---
   return (
     <div className="flex flex-col items-center gap-6 p-4 pt-4 pb-6 animate-fade-in">
       {/* Game code section */}

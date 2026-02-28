@@ -108,6 +108,12 @@ export function useRoomConnection(
     });
 
     rChannel.bind('player-left', (data: { playerId: string; newOwnerId?: string; replacementBot: Player }) => {
+      // Self-replacement: the current player was replaced by a bot
+      if (data.playerId === playerIdRef.current) {
+        addToast('You were replaced by a bot', 'warning');
+        router.push('/');
+        return;
+      }
       setRoom((prev) => {
         if (!prev) return prev;
         const leavingPlayer = prev.players.find((p) => p.id === data.playerId);
