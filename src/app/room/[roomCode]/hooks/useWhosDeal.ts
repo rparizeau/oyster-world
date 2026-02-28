@@ -233,19 +233,30 @@ export function useWhosDeal(
     };
 
     const onTrickStarted = (data: { leadSeatIndex: number }) => {
-      setWdTrickWinner(null);
-      setWhosDealState((prev) => {
-        if (!prev?.round) return prev;
-        return {
-          ...prev,
-          round: {
-            ...prev.round,
-            currentTrick: [],
-            trickLeadSeatIndex: data.leadSeatIndex,
-            currentTurnSeatIndex: data.leadSeatIndex,
-          },
-        };
-      });
+      const doReset = () => {
+        setWdTrickWinner(null);
+        wdTrickTimerRef.current = null;
+        setWhosDealState((prev) => {
+          if (!prev?.round) return prev;
+          return {
+            ...prev,
+            round: {
+              ...prev.round,
+              currentTrick: [],
+              trickLeadSeatIndex: data.leadSeatIndex,
+              currentTurnSeatIndex: data.leadSeatIndex,
+            },
+          };
+        });
+      };
+
+      // Delay reset if trick result is being displayed so users can see all cards
+      if (wdTrickTimerRef.current) {
+        clearTimeout(wdTrickTimerRef.current);
+        wdTrickTimerRef.current = setTimeout(doReset, TRICK_RESULT_DISPLAY_MS);
+      } else {
+        doReset();
+      }
     };
 
     const onCardPlayed = (data: { seatIndex: number; card: WDCard }) => {
@@ -326,24 +337,36 @@ export function useWhosDeal(
       scores: { a: number; b: number };
       isGameOver: boolean;
     }) => {
-      setWdRoundSummary(data);
-      setWhosDealState((prev) => {
-        if (!prev?.round) return prev;
-        return {
-          ...prev,
-          teams: {
-            a: { ...prev.teams.a, score: data.scores.a },
-            b: { ...prev.teams.b, score: data.scores.b },
-          },
-          round: {
-            ...prev.round,
-            trumpPhase: 'round_over' as const,
-            tricksWon: data.tricksWon,
-            currentTrick: [],
-          },
-          phase: data.isGameOver ? 'game_over' as const : prev.phase,
-        };
-      });
+      const doRoundOver = () => {
+        setWdTrickWinner(null);
+        wdTrickTimerRef.current = null;
+        setWdRoundSummary(data);
+        setWhosDealState((prev) => {
+          if (!prev?.round) return prev;
+          return {
+            ...prev,
+            teams: {
+              a: { ...prev.teams.a, score: data.scores.a },
+              b: { ...prev.teams.b, score: data.scores.b },
+            },
+            round: {
+              ...prev.round,
+              trumpPhase: 'round_over' as const,
+              tricksWon: data.tricksWon,
+              currentTrick: [],
+            },
+            phase: data.isGameOver ? 'game_over' as const : prev.phase,
+          };
+        });
+      };
+
+      // Delay if trick result is being displayed so users can see the final cards
+      if (wdTrickTimerRef.current) {
+        clearTimeout(wdTrickTimerRef.current);
+        wdTrickTimerRef.current = setTimeout(doRoundOver, TRICK_RESULT_DISPLAY_MS);
+      } else {
+        doRoundOver();
+      }
     };
 
     const onNewRound = (data: {

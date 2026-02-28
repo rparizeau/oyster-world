@@ -290,11 +290,6 @@ export default function RoomPage() {
           onHome={handleLeave}
           onAction={handleStepOut}
         />
-        <ScoreBar
-          teams={whosDealState.teams}
-          targetScore={whosDealState.targetScore}
-          myTeam={myTeam}
-        />
         <div className="flex-1">
           <WhosDealGameView
             room={room}

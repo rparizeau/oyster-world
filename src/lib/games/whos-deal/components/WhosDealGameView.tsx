@@ -176,9 +176,6 @@ export default function WhosDealGameView({
     p => p.id === gameState.seats[round.currentTurnSeatIndex]
   );
 
-  // Caller name for trump badge
-  const callerName = displayName(room.players.find(p => p.id === round.callingPlayerId));
-
   return (
     <div className="flex flex-col max-w-lg mx-auto w-full overflow-x-hidden" style={{ minHeight: 0, flex: 1 }}>
       {/* Scoreboard */}
@@ -186,10 +183,7 @@ export default function WhosDealGameView({
         teams={gameState.teams}
         targetScore={gameState.targetScore}
         tricksWon={round.tricksWon}
-        tricksPlayed={round.tricksPlayed}
         trumpPhase={round.trumpPhase}
-        trumpSuit={round.trumpSuit}
-        callerName={callerName}
         roundsPlayed={gameState.roundsPlayed}
       />
 
@@ -201,7 +195,7 @@ export default function WhosDealGameView({
         )}
 
         {/* Opponent positions (top, left, right) */}
-        <div className="w-full max-w-sm relative" style={{ minHeight: '280px' }}>
+        <div className="w-full max-w-sm relative" style={{ minHeight: '320px' }}>
           {seatMappings
             .filter(s => s.position !== 'bottom')
             .map(({ position, seatIndex }) => {
@@ -211,8 +205,6 @@ export default function WhosDealGameView({
               const isInactive = round.goingAlone && seatIndex === round.inactivePartnerSeatIndex;
               const hasPassed = round.passedPlayers.includes(gameState.seats[seatIndex]);
               const cardCount = round.handCounts[gameState.seats[seatIndex]] ?? 0;
-              const trickCard = round.currentTrick.find(tc => tc.seatIndex === seatIndex);
-              const isWinner = trickWinner?.seatIndex === seatIndex;
               const isMe = seatIndex === mySeatIndex;
               const wonTrick = round.trumpPhase === 'playing' && trickWinner?.seatIndex === seatIndex;
 
@@ -226,8 +218,6 @@ export default function WhosDealGameView({
                   isInactive={isInactive}
                   hasPassed={hasPassed}
                   cardCount={cardCount}
-                  trickCard={trickCard ?? null}
-                  isWinner={isWinner}
                   team={getTeamForSeat(seatIndex)}
                   isMe={isMe}
                   wonTrick={wonTrick}
@@ -238,43 +228,33 @@ export default function WhosDealGameView({
 
           {/* Center area */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-2">
-              {/* Trump calling: face-up card (shown in center during Round 1 & 2) */}
-              {(round.trumpPhase === 'round1' || round.trumpPhase === 'round2') && (
-                <FaceUpCardDisplay
-                  card={round.faceUpCard}
-                  dimmed={round.trumpPhase === 'round2'}
-                />
-              )}
-
-              {/* Trick area - felt circle */}
-              {round.trumpPhase === 'playing' && (
+            <div className="flex flex-col items-center gap-2 mt-5">
+              {/* Trick area - felt circle (always present), with face-up card overlaid during trump calling */}
+              <div className="relative">
                 <TrickArea
-                  trick={round.currentTrick}
+                  trick={round.trumpPhase === 'playing' ? round.currentTrick : []}
                   mySeatIndex={mySeatIndex}
                   trickWinner={trickWinner}
                 />
-              )}
-
-              {/* Trump indicator when trick area empty */}
-              {round.trumpSuit && round.trumpPhase === 'playing' && round.currentTrick.length === 0 && !trickWinner && (
-                <TrumpIndicator
-                  trumpSuit={round.trumpSuit}
-                  callerName={callerName}
-                  goingAlone={round.goingAlone}
-                />
-              )}
-
-              {/* Bottom player's trick card */}
-              {round.trumpPhase === 'playing' && (() => {
-                const myTrickCard = round.currentTrick.find(tc => tc.seatIndex === mySeatIndex);
-                if (!myTrickCard) return null;
-                return (
-                  <div className="mt-1">
-                    <PlayingCard card={myTrickCard.card} size="trick" winning={trickWinner?.seatIndex === mySeatIndex} />
+                {(round.trumpPhase === 'round1' || round.trumpPhase === 'round2') && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <FaceUpCardDisplay
+                      card={round.faceUpCard}
+                      dimmed={round.trumpPhase === 'round2'}
+                    />
                   </div>
-                );
-              })()}
+                )}
+              </div>
+
+              {/* Trump & Led suit badges (always present, unset state when no trump) */}
+              <div className="flex items-center gap-4 mt-1">
+                <TableBadge
+                  suit={round.trumpSuit}
+                  label="TRUMP"
+                  teamColor={round.callingTeam === 'a' ? 'a' : round.callingTeam === 'b' ? 'b' : null}
+                />
+                <TableBadge suit={ledSuit} label="LED" />
+              </div>
             </div>
           </div>
         </div>
@@ -312,14 +292,10 @@ export default function WhosDealGameView({
           mySeatIndex={mySeatIndex}
         />
 
-        {/* Trump badge (persistent during play/discard) */}
-        {round.trumpSuit && (round.trumpPhase === 'playing' || round.trumpPhase === 'dealer_discard') && (
-          <div className="mt-2">
-            <TrumpBadge
-              trumpSuit={round.trumpSuit}
-              callerName={callerName}
-              goingAlone={round.goingAlone}
-            />
+        {/* Playing to target */}
+        {(round.trumpPhase === 'playing' || round.trumpPhase === 'dealer_discard') && (
+          <div className="mt-1 text-center">
+            <span className="text-xs" style={{ color: 'rgba(232,230,240,.2)' }}>Playing to {gameState.targetScore}</span>
           </div>
         )}
       </div>
@@ -336,7 +312,7 @@ export default function WhosDealGameView({
             ) : (
               <div className="absolute -top-1 -left-1 w-6 h-6 opacity-0" />
             )}
-            <div className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate font-semibold text-cream ${isMyTurn ? 'ring-1 ring-glass/40' : ''}`} style={{ background: isMyTurn ? 'rgba(107,191,163,.15)' : 'rgba(26,82,118,.4)', border: '1px solid rgba(245,230,202,.08)' }}>
+            <div className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate font-semibold text-cream`} style={{ background: isMyTurn ? 'rgba(107,191,163,.15)' : 'rgba(26,82,118,.4)', border: `2px solid ${isMyTurn ? 'rgba(107,191,163,.6)' : myTeam === 'a' ? 'var(--shallow-water)' : myTeam === 'b' ? 'var(--coral)' : 'transparent'}` }}>
               <span className="truncate max-w-[80px]">{displayName(room.players.find(p => p.id === playerId))}</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-1 flex-shrink-0" style={{ background: 'rgba(240,194,127,.15)', color: 'var(--pearl)' }}>YOU</span>
             </div>
@@ -386,63 +362,65 @@ function Scoreboard({
   teams,
   targetScore,
   tricksWon,
-  tricksPlayed,
   trumpPhase,
-  trumpSuit,
-  callerName,
   roundsPlayed,
 }: {
   teams: ClientWhosDealState['teams'];
   targetScore: number;
   tricksWon: { a: number; b: number };
-  tricksPlayed: number;
   trumpPhase: string;
-  trumpSuit: Suit | null;
-  callerName: string;
   roundsPlayed: number;
 }) {
   const showTricks = trumpPhase === 'playing' || trumpPhase === 'round_over';
 
   return (
-    <div>
-      {/* Row 1 — Scores & Trump */}
-      <div className="h-14 px-4 flex items-center justify-between" style={{ background: 'rgba(13,27,62,.5)' }}>
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--shallow-water)' }} />
-          <span className="text-sm truncate" style={{ color: 'var(--shallow-water)' }}>Team A</span>
-          <span className="text-2xl font-bold tabular-nums flex-shrink-0" style={{ color: 'var(--shallow-water)' }}>{teams.a.score}</span>
-          <span className="text-sm flex-shrink-0" style={{ color: 'rgba(232,230,240,.2)' }}>vs</span>
-          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--coral)' }} />
-          <span className="text-sm truncate" style={{ color: 'var(--coral)' }}>Team B</span>
-          <span className="text-2xl font-bold tabular-nums flex-shrink-0" style={{ color: 'var(--coral)' }}>{teams.b.score}</span>
-        </div>
-        {trumpSuit && (
-          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-            <span className={`text-2xl ring-1 rounded px-1 ${SUIT_COLOR[trumpSuit] === 'red' ? 'text-red-500 ring-red-500/30' : 'ring-cream/20'}`} style={SUIT_COLOR[trumpSuit] === 'black' ? { color: 'var(--cream)' } : undefined}>
-              {SUIT_SYMBOL[trumpSuit]}
-            </span>
-            <span className="text-sm truncate max-w-[60px]" style={{ color: 'rgba(245,230,202,.45)' }}>{callerName}</span>
+    <div className="px-4 py-2.5 mb-7 flex items-start justify-between" style={{ background: 'rgba(13,27,62,.5)', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+      <div className="flex items-start gap-2 min-w-0 flex-1">
+        {/* Team A */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--shallow-water)' }} />
+            <span className="text-sm truncate mr-1" style={{ color: 'var(--shallow-water)' }}>Team A</span>
+            <span className="text-2xl font-bold tabular-nums flex-shrink-0 leading-none" style={{ color: 'var(--shallow-water)' }}>{teams.a.score}</span>
+            {teams.a.score === targetScore - 1 && (
+              <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded flex-shrink-0" style={{ background: 'rgba(126,184,212,.15)', color: 'var(--shallow-water)' }}>GP</span>
+            )}
           </div>
-        )}
-      </div>
-      {/* Row 2 — Trick Count & Info */}
-      <div className="h-7 px-4 flex items-center justify-between text-xs" style={{ background: 'rgba(13,27,62,.5)', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
-        <div className="flex items-center gap-1.5">
           {showTricks && (
-            <>
-              <span style={{ color: 'rgba(232,230,240,.3)' }}>Tricks</span>
-              <span className="font-bold" style={{ color: 'var(--shallow-water)' }}>{tricksWon.a}</span>
-              <span style={{ color: 'rgba(232,230,240,.2)' }}>-</span>
-              <span className="font-bold" style={{ color: 'var(--coral)' }}>{tricksWon.b}</span>
-              <span className="ml-1" style={{ color: 'rgba(232,230,240,.3)' }}>Trick {tricksPlayed + 1} of 5</span>
-            </>
+            <div className="flex items-center gap-1 ml-0.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i < tricksWon.a ? 'var(--shallow-water)' : 'rgba(126,184,212,.2)' }} />
+              ))}
+            </div>
           )}
         </div>
-        <div className="flex items-center gap-1.5" style={{ color: 'rgba(232,230,240,.25)' }}>
-          <span>Playing to {targetScore}</span>
-          <span>&bull;</span>
-          <span>Rd {roundsPlayed}</span>
+
+        <span className="text-sm flex-shrink-0 mt-0.5" style={{ color: 'rgba(232,230,240,.2)' }}>vs</span>
+
+        {/* Team B */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--coral)' }} />
+            <span className="text-sm truncate mr-1" style={{ color: 'var(--coral)' }}>Team B</span>
+            <span className="text-2xl font-bold tabular-nums flex-shrink-0 leading-none" style={{ color: 'var(--coral)' }}>{teams.b.score}</span>
+            {teams.b.score === targetScore - 1 && (
+              <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded flex-shrink-0" style={{ background: 'rgba(232,168,124,.15)', color: 'var(--coral)' }}>GP</span>
+            )}
+          </div>
+          {showTricks && (
+            <div className="flex items-center gap-1 ml-0.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i < tricksWon.b ? 'var(--coral)' : 'rgba(232,168,124,.2)' }} />
+              ))}
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Info */}
+      <div className="flex flex-col items-end text-xs flex-shrink-0 mt-0.5" style={{ color: 'rgba(232,230,240,.25)' }}>
+        <span>to {targetScore}</span>
+        <span>Rd {roundsPlayed}</span>
       </div>
     </div>
   );
@@ -458,8 +436,6 @@ function OpponentSeat({
   isInactive,
   hasPassed,
   cardCount,
-  trickCard,
-  isWinner,
   team,
   isMe,
   wonTrick,
@@ -472,8 +448,6 @@ function OpponentSeat({
   isInactive: boolean;
   hasPassed: boolean;
   cardCount: number;
-  trickCard: TrickCard | null;
-  isWinner: boolean;
   team: 'a' | 'b';
   isMe: boolean;
   wonTrick: boolean;
@@ -487,23 +461,24 @@ function OpponentSeat({
   };
 
   const isHuman = player && !player.isBot;
+  const teamColor = team === 'a' ? 'var(--shallow-water)' : 'var(--coral)';
 
   return (
     <div className={`absolute flex ${positionStyles[position]} ${isInactive ? 'opacity-30' : ''}`}>
       {/* Name tag with dealer chip */}
-      <div className="relative mb-1">
+      <div className="relative">
         {isDealer ? (
-          <div className="absolute -top-1 -left-1 z-10 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: 'var(--pearl)', border: '2px solid var(--accent-hover)', boxShadow: '0 0 8px rgba(240,194,127,0.4)' }}>
-            <span className="text-xs font-bold" style={{ color: 'var(--depth-deep)' }}>D</span>
+          <div className="absolute -top-1 -left-1 z-10 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'var(--pearl)', border: '2px solid var(--accent-hover)', boxShadow: '0 0 8px rgba(240,194,127,0.4)' }}>
+            <span className="text-[10px] font-bold" style={{ color: 'var(--depth-deep)' }}>D</span>
           </div>
         ) : (
-          <div className="absolute -top-1 -left-1 w-6 h-6 opacity-0" />
+          <div className="absolute -top-1 -left-1 w-5 h-5 opacity-0" />
         )}
         <div
-          className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate ${isActive ? 'ring-1 ring-glass/40' : ''}`}
+          className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate ${wonTrick ? 'ring-1 ring-glass' : isActive ? 'ring-1 ring-glass/40' : ''}`}
           style={{
-            background: isActive ? 'rgba(107,191,163,.15)' : isHuman ? 'rgba(26,82,118,.4)' : 'rgba(13,27,62,.3)',
-            border: '1px solid rgba(245,230,202,.06)',
+            background: wonTrick ? 'rgba(107,191,163,.15)' : isActive ? 'rgba(107,191,163,.1)' : isHuman ? 'rgba(26,82,118,.4)' : 'rgba(13,27,62,.3)',
+            border: `2px solid ${isActive ? 'rgba(107,191,163,.6)' : teamColor}`,
             color: isHuman ? 'var(--cream)' : 'rgba(232,230,240,.35)',
             fontWeight: isHuman ? 600 : 400,
           }}
@@ -515,48 +490,29 @@ function OpponentSeat({
         </div>
       </div>
 
-      {/* Badge row — h-6, WON / ALONE or invisible placeholder */}
-      <div className="h-6 flex items-center justify-center">
-        {wonTrick && (
-          <span className="text-glass text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(107,191,163,.15)' }}>&#10003; WON</span>
-        )}
-        {isInactive && trumpPhase === 'playing' && (
-          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(201,101,138,.15)', color: 'var(--star)' }}>ALONE</span>
-        )}
-      </div>
-
-      {/* Cards row — h-14 */}
-      <div className="h-14 flex items-center justify-center gap-0.5">
+      {/* Cards */}
+      <div className="h-8 flex items-center justify-center gap-0.5 mt-0.5">
         {isInactive ? (
-          <span className="text-xs italic" style={{ color: 'rgba(232,230,240,.2)' }}>Sitting out</span>
+          <span className="text-[10px] italic" style={{ color: 'rgba(232,230,240,.2)' }}>Sitting out</span>
         ) : (
           Array.from({ length: Math.min(cardCount, 5) }).map((_, i) => (
-            <div key={i} className={`w-7 h-10 rounded-lg shadow-md relative flex-shrink-0 ${i > 0 ? '-ml-2' : ''}`} style={{ background: 'linear-gradient(to bottom right, #1a5276, #0d1b3e)', border: '2px solid rgba(126,184,212,.3)' }}>
-              <div className="absolute inset-[3px] rounded flex items-center justify-center text-[8px]" style={{ border: '1px solid rgba(126,184,212,.15)', color: 'rgba(126,184,212,.25)' }}>✦</div>
-            </div>
+            <div key={i} className={`w-4 h-6 rounded flex-shrink-0 ${i > 0 ? '-ml-1.5' : ''}`} style={{ background: 'linear-gradient(to bottom right, #1a5276, #0d1b3e)', border: '1.5px solid rgba(126,184,212,.25)' }} />
           ))
         )}
       </div>
 
-      {/* Status row — h-5 */}
-      <div className="h-5 flex items-center justify-center">
-        {isActive && trumpPhase === 'playing' && (
-          <span className="text-xs flex items-center gap-1" style={{ color: 'rgba(232,230,240,.35)' }}>
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'rgba(232,230,240,.35)' }} />
-            Thinking...
-          </span>
+      {/* Status line */}
+      <div className="h-4 flex items-center justify-center">
+        {wonTrick && (
+          <span className="text-glass text-[10px] font-semibold">&#10003; WON</span>
         )}
-        {hasPassed && !isActive && (
-          <span className="text-xs italic" style={{ color: 'rgba(232,230,240,.2)' }}>Pass</span>
+        {isInactive && trumpPhase === 'playing' && (
+          <span className="text-[10px] font-semibold" style={{ color: 'var(--star)' }}>ALONE</span>
+        )}
+        {hasPassed && !isActive && !wonTrick && trumpPhase !== 'playing' && (
+          <span className="text-[10px] italic" style={{ color: 'rgba(232,230,240,.2)' }}>Pass</span>
         )}
       </div>
-
-      {/* Trick card */}
-      {trickCard && (
-        <div className="mt-1">
-          <PlayingCard card={trickCard.card} size="trick" winning={isWinner} />
-        </div>
-      )}
     </div>
   );
 }
@@ -871,40 +827,34 @@ function StatusText({
   );
 }
 
-// ==================== TRUMP INDICATOR ====================
+// ==================== TABLE BADGE (Trump / Led) ====================
 
-function TrumpIndicator({ trumpSuit, callerName, goingAlone }: {
-  trumpSuit: Suit;
-  callerName: string;
-  goingAlone: boolean;
+function TableBadge({ suit, label, teamColor }: {
+  suit: Suit | null;
+  label: string;
+  teamColor?: 'a' | 'b' | null;
 }) {
-  const isRed = SUIT_COLOR[trumpSuit] === 'red';
+  const isRed = suit ? SUIT_COLOR[suit] === 'red' : false;
+  const border = teamColor === 'a'
+    ? '1.5px solid var(--shallow-water)'
+    : teamColor === 'b'
+      ? '1.5px solid var(--coral)'
+      : '1px solid rgba(255,255,255,.08)';
+  const bg = teamColor === 'a'
+    ? 'rgba(126,184,212,.1)'
+    : teamColor === 'b'
+      ? 'rgba(232,168,124,.1)'
+      : 'rgba(13,27,62,.5)';
 
   return (
-    <div className="flex flex-col items-center gap-0.5 animate-fade-in">
-      <span className={`text-3xl ${isRed ? 'text-red-400' : ''}`} style={!isRed ? { color: 'var(--cream)' } : undefined}>
-        {SUIT_SYMBOL[trumpSuit]}
-      </span>
-      <span className="text-[10px]" style={{ color: 'rgba(232,230,240,.3)' }}>{callerName} called trump</span>
-      {goingAlone && <span className="text-[10px] text-glass font-semibold">Going Alone</span>}
-    </div>
-  );
-}
-
-function TrumpBadge({ trumpSuit, callerName, goingAlone }: {
-  trumpSuit: Suit;
-  callerName: string;
-  goingAlone: boolean;
-}) {
-  const isRed = SUIT_COLOR[trumpSuit] === 'red';
-
-  return (
-    <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs" style={{ background: 'rgba(13,27,62,.5)', border: '1px solid rgba(255,255,255,.04)' }}>
+    <div
+      className={`flex items-center gap-1.5 rounded-lg px-2 py-1 ${!suit ? 'opacity-25' : ''}`}
+      style={{ border, background: bg }}
+    >
       <span className={`text-base ${isRed ? 'text-red-400' : ''}`} style={!isRed ? { color: 'var(--cream)' } : undefined}>
-        {SUIT_SYMBOL[trumpSuit]}
+        {suit ? SUIT_SYMBOL[suit] : '\u2022'}
       </span>
-      <span className="truncate max-w-[60px]" style={{ color: 'rgba(245,230,202,.45)' }}>{callerName}</span>
-      {goingAlone && <span className="text-glass font-semibold">Alone</span>}
+      <span className="text-[10px] font-semibold uppercase" style={{ color: 'rgba(232,230,240,.35)' }}>{label}</span>
     </div>
   );
 }
@@ -1012,26 +962,32 @@ function RoundSummaryOverlay({
   const points = aPoints > 0 ? aPoints : bPoints;
   const isEuchre = winningTeam !== summary.callingTeam;
 
+  const winColor = winningTeam === 'a' ? 'var(--shallow-water)' : 'var(--coral)';
+  const headline = isEuchre ? 'Euchre!' : points >= 4 ? 'Alone Sweep!' : points >= 2 ? 'March!' : 'Round Over';
+
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center backdrop-blur-sm rounded-xl animate-fade-in" style={{ background: 'rgba(8,12,26,.8)' }}>
-      <div className="rounded-2xl p-5 text-center max-w-xs w-full animate-scale-in" style={{ background: 'rgba(13,27,62,.8)', border: '1px solid rgba(255,255,255,.06)' }}>
-        <p className="text-lg font-black text-cream mb-1">
-          {isEuchre ? 'Euchre!' : points >= 4 ? 'Alone Sweep!' : points >= 2 ? 'March!' : 'Round Over'}
+      <div className="rounded-2xl p-6 text-center max-w-xs w-full animate-scale-in" style={{ background: 'rgba(13,27,62,.8)', border: '1px solid rgba(255,255,255,.06)' }}>
+        <p className="text-lg font-black text-cream">
+          {headline}
         </p>
-        <p className="text-sm mb-3" style={{ color: winningTeam === 'a' ? 'var(--shallow-water)' : 'var(--coral)' }}>
-          Team {winningTeam.toUpperCase()} +{points} point{points > 1 ? 's' : ''}
+        <p className="text-2xl font-black mt-1" style={{ color: winColor }}>
+          Team {winningTeam.toUpperCase()}
         </p>
-        <div className="flex justify-center gap-4 text-sm">
-          <div>
-            <span className="font-bold" style={{ color: 'var(--shallow-water)' }}>Team A</span>
-            <span className="font-black ml-1" style={{ color: 'var(--shallow-water)' }}>{summary.scores.a}</span>
+        <p className="text-sm font-bold mt-0.5" style={{ color: winColor }}>
+          +{points} point{points > 1 ? 's' : ''}
+        </p>
+        <div className="flex justify-center gap-6 text-sm mt-4">
+          <div className="flex flex-col items-center">
+            <span className="text-2xl font-black tabular-nums" style={{ color: 'var(--shallow-water)' }}>{summary.scores.a}</span>
+            <span className="text-xs font-bold" style={{ color: 'var(--shallow-water)' }}>Team A</span>
           </div>
-          <div>
-            <span className="font-bold" style={{ color: 'var(--coral)' }}>Team B</span>
-            <span className="font-black ml-1" style={{ color: 'var(--coral)' }}>{summary.scores.b}</span>
+          <div className="flex flex-col items-center">
+            <span className="text-2xl font-black tabular-nums" style={{ color: 'var(--coral)' }}>{summary.scores.b}</span>
+            <span className="text-xs font-bold" style={{ color: 'var(--coral)' }}>Team B</span>
           </div>
         </div>
-        <p className="text-xs mt-2" style={{ color: 'rgba(232,230,240,.3)' }}>
+        <p className="text-xs mt-3" style={{ color: 'rgba(232,230,240,.3)' }}>
           Tricks: A {summary.tricksWon.a} - B {summary.tricksWon.b}
         </p>
       </div>
