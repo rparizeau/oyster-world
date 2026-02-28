@@ -549,3 +549,38 @@ body {
 
 .c4-ghost.red { background: #ef4444; }
 .c4-ghost.yellow { background: #facc15; }
+
+/* === Daily Pearl (Wordle) === */
+
+@keyframes wordle-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes wordle-flip {
+  0% { transform: scaleY(1); }
+  50% { transform: scaleY(0); }
+  100% { transform: scaleY(1); }
+}
+
+@keyframes wordle-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+.wordle-shake {
+  animation: wordle-shake 0.4s ease;
+}
+
+.wordle-flip {
+  animation: wordle-flip 0.3s ease;
+  animation-fill-mode: both;
+}
+
+.wordle-pop {
+  animation: wordle-pop 0.08s ease;
+}

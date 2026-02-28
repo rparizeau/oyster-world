@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import FourKateGameView from '@/lib/games/4-kate/components/FourKateGameView';
 import WhosDealGameView from '@/lib/games/whos-deal/components/WhosDealGameView';
 import TerriblePeopleGameView from '@/lib/games/terrible-people/components/TerriblePeopleGameView';
 import MinesweeperGameView from '@/lib/games/minesweeper/components/MinesweeperGameView';
 import BattleshipGameView from '@/lib/games/battleship/components/BattleshipGameView';
+import WordleGameView from '@/lib/games/wordle/components/WordleGameView';
 import DeepBar from '@/components/DeepBar';
 
 import { GAME_DISPLAY_NAMES } from './types';
@@ -17,6 +18,7 @@ import { useTerriblePeople } from './hooks/useTerriblePeople';
 import { useWhosDeal } from './hooks/useWhosDeal';
 import { useMinesweeper } from './hooks/useMinesweeper';
 import { useBattleship } from './hooks/useBattleship';
+import { useWordle } from './hooks/useWordle';
 import type { Difficulty } from '@/lib/games/minesweeper/types';
 
 import ToastContainer from './components/ToastContainer';
@@ -81,23 +83,41 @@ export default function RoomPage() {
     (room?.game as { difficulty?: Difficulty } | null)?.difficulty || 'easy';
   const minesweeper = useMinesweeper(minesweeperDifficulty);
 
+  // Wordle (Daily Pearl) — client-side game state
+  const wordle = useWordle();
+
+  // Auto-start for Wordle (skip lobby)
+  const wordleAutoStarted = useRef(false);
+  useEffect(() => {
+    if (
+      room?.gameId === 'wordle' &&
+      room?.status === 'waiting' &&
+      playerId === room?.ownerId &&
+      !wordleAutoStarted.current &&
+      !starting
+    ) {
+      wordleAutoStarted.current = true;
+      handleStartGame();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.gameId, room?.status, playerId, room?.ownerId]);
+
   // --- Actions ---
 
   async function handleLeave() {
     if (!playerId || leaving) return;
     setLeaving(true);
+    // Leave the room on the server but keep the session (name persists)
     try {
       await fetch('/api/rooms/leave', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomCode, playerId }),
       });
-      sessionStorage.removeItem('playerId');
-      sessionStorage.removeItem('playerName');
-      router.push('/');
     } catch {
-      setLeaving(false);
+      // Non-fatal — navigate home regardless
     }
+    router.push('/');
   }
 
   async function handleStartGame(settings?: Record<string, unknown>) {
@@ -202,10 +222,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Lobby"
+          actionLabel="Games"
           showAction={true}
-          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
-          onAction={handleReturnToLobby}
+          onHome={handleLeave}
+          onAction={handleLeave}
         />
         <ScoreBar
           teams={whosDealState.teams}
@@ -239,10 +259,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Lobby"
+          actionLabel="Games"
           showAction={true}
-          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
-          onAction={handleReturnToLobby}
+          onHome={handleLeave}
+          onAction={handleLeave}
         />
         <div className="flex-1">
           <BattleshipGameView
@@ -259,6 +279,54 @@ export default function RoomPage() {
     );
   }
 
+  // Wordle (Daily Pearl) game view
+  if (room.status === 'playing' && room.gameId === 'wordle') {
+    return (
+      <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
+        <DeepBar
+          gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+          actionLabel="Games"
+          showAction={true}
+          onHome={handleLeave}
+          onAction={handleLeave}
+        />
+        <div className="flex-1 relative">
+          <WordleGameView
+            game={wordle.game}
+            countdown={wordle.countdown}
+            onTypeLetter={wordle.handleTypeLetter}
+            onDeleteLetter={wordle.handleDeleteLetter}
+            onSubmitGuess={wordle.handleSubmitGuess}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Wordle auto-start loading state
+  if (room.gameId === 'wordle' && room.status === 'waiting' && wordleAutoStarted.current) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-depth-deep animate-fade-in">
+        <div className="flex flex-col items-center gap-3">
+          <div className="text-3xl">🦪</div>
+          <div className="font-display text-pearl text-sm">Opening your pearl...</div>
+          <div className="flex gap-1.5 mt-1">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: 'rgba(240,194,127,.25)',
+                  animation: `dot-pulse 1.4s ease-in-out infinite ${i * 0.2}s`,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Minesweeper game view
   if (room.status === 'playing' && room.gameId === 'minesweeper') {
     return (
@@ -267,10 +335,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Lobby"
+          actionLabel="Games"
           showAction={true}
-          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
-          onAction={handleReturnToLobby}
+          onHome={handleLeave}
+          onAction={handleLeave}
         />
         <MinesweeperGameView
           game={minesweeper.game}
@@ -297,10 +365,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Lobby"
+          actionLabel="Games"
           showAction={true}
-          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
-          onAction={handleReturnToLobby}
+          onHome={handleLeave}
+          onAction={handleLeave}
         />
         <div className="flex-1">
           <FourKateGameView
@@ -324,10 +392,10 @@ export default function RoomPage() {
         <ConnectionBanner status={connectionStatus} />
         <DeepBar
           gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
-          actionLabel="Lobby"
+          actionLabel="Games"
           showAction={true}
-          onHome={() => { if (confirm('Leave the game and go home?')) { handleLeave(); } }}
-          onAction={handleReturnToLobby}
+          onHome={handleLeave}
+          onAction={handleLeave}
         />
         <div className="flex-1">
           <TerriblePeopleGameView

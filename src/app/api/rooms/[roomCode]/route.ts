@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRoom } from '@/lib/redis';
 import { roomNotFound } from '@/lib/errors';
 import type { WhosDealGameState } from '@/lib/games/whos-deal';
+import { getGameModule } from '@/lib/games/loader';
 
 export async function GET(
   request: Request,
@@ -52,8 +53,13 @@ export async function GET(
         } : null,
       };
     } else {
-      // For other games (4 Kate), return game state as-is
-      sanitizedGame = room.game;
+      // Use the game module's sanitizeForPlayer if available, otherwise return as-is
+      const gameModule = getGameModule(room.gameId);
+      if (gameModule) {
+        sanitizedGame = gameModule.sanitizeForPlayer(room.game, requestingPlayerId);
+      } else {
+        sanitizedGame = room.game;
+      }
     }
   }
 

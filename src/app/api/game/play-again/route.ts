@@ -145,6 +145,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   }
 
+  // --- Daily Pearl (Wordle) ---
+  if (room.gameId === 'wordle') {
+    // Return to lobby (same as Minesweeper)
+    const updated = await atomicRoomUpdate(roomCode, (current) => {
+      return { ...current, status: 'waiting' as const, game: null };
+    });
+
+    if (!updated) {
+      return apiError('Failed to return to lobby', 'RACE_CONDITION', 409);
+    }
+
+    await refreshRoomTTL(roomCode);
+
+    try {
+      await pusher.trigger(roomChannel(roomCode), 'room-updated', { room: updated });
+    } catch {
+      // Non-fatal
+    }
+
+    return NextResponse.json({ success: true });
+  }
+
   // --- Minesweeper ---
   if (room.gameId === 'minesweeper') {
     // "Change Difficulty" — return to lobby with room reset to 'waiting'

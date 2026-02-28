@@ -48,6 +48,13 @@ const GAMES: GameCardInfo[] = [
     icon: '🚢',
     maxPlayers: 2,
   },
+  {
+    id: 'wordle',
+    name: 'Daily Pearl',
+    description: 'Guess the daily word. Six tries. New pearl every 12 hours.',
+    icon: '🦪',
+    maxPlayers: 1,
+  },
 ];
 
 type Mode = 'home' | 'create-name' | 'create-game' | 'loading' | 'join';
@@ -60,6 +67,20 @@ export default function HomePage() {
   const [selectedGame, setSelectedGame] = useState<string>(GAMES[0].id);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Restore session — skip straight to game select if returning player
+  useEffect(() => {
+    const storedName = sessionStorage.getItem('playerName');
+    if (storedName) {
+      setName(storedName);
+      const storedGame = sessionStorage.getItem('lastGameId');
+      if (storedGame) {
+        const idx = GAMES.findIndex(g => g.id === storedGame);
+        if (idx !== -1) setSelectedGame(storedGame);
+      }
+      setMode('create-game');
+    }
+  }, []);
 
   const handleCarouselSelect = useCallback((gameId: string) => {
     setSelectedGame(gameId);
@@ -83,6 +104,7 @@ export default function HomePage() {
       }
       sessionStorage.setItem('playerId', data.playerId);
       sessionStorage.setItem('playerName', data.playerName);
+      sessionStorage.setItem('lastGameId', selectedGame);
       // Auto-advance after 1.5s minimum
       setTimeout(() => {
         router.push(`/room/${data.roomCode}`);
@@ -349,7 +371,7 @@ export default function HomePage() {
       </div>
 
       {/* Pearl carousel */}
-      <PearlCarousel games={GAMES} onSelect={handleCarouselSelect} />
+      <PearlCarousel games={GAMES} initialGameId={selectedGame} onSelect={handleCarouselSelect} />
 
       {error && (
         <div className="animate-fade-in rounded-lg px-4 py-2.5 text-center max-w-[300px] w-full" style={{ background: 'rgba(201,101,138,.1)', border: '1px solid rgba(201,101,138,.3)' }}>
@@ -383,14 +405,17 @@ export default function HomePage() {
 // ====================
 function PearlCarousel({
   games,
+  initialGameId,
   onSelect,
 }: {
   games: GameCardInfo[];
+  initialGameId?: string;
   onSelect: (gameId: string) => void;
 }) {
   const count = games.length;
   const containerRef = useRef<HTMLDivElement>(null);
-  const [current, setCurrent] = useState(count); // start at middle copy, first card
+  const initialIndex = initialGameId ? games.findIndex(g => g.id === initialGameId) : 0;
+  const [current, setCurrent] = useState(count + Math.max(0, initialIndex)); // start at middle copy
   const [isDragging, setIsDragging] = useState(false);
   const [dragDelta, setDragDelta] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -411,7 +436,7 @@ function PearlCarousel({
 
   // Notify parent on mount
   useEffect(() => {
-    onSelect(games[0].id);
+    onSelect(games[Math.max(0, initialIndex)].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -479,6 +504,12 @@ function PearlCarousel({
   const tripled = [...games, ...games, ...games];
   const easing = 'cubic-bezier(.25,.85,.35,1)';
 
+  // Measure card height for the fixed selection frame
+  const [cardHeight, setCardHeight] = useState(0);
+  const cardMeasureRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) setCardHeight(node.offsetHeight);
+  }, []);
+
   return (
     <div className="w-full">
       <div
@@ -493,6 +524,24 @@ function PearlCarousel({
         onTouchMove={(e) => onPointerMove(e.touches[0].clientX)}
         onTouchEnd={onPointerUp}
       >
+        {/* Fixed gold selection frame */}
+        {cardHeight > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              width: `${cardWidth}px`,
+              height: `${cardHeight}px`,
+              transform: 'translate(-50%, -50%)',
+              border: '2px solid var(--pearl)',
+              borderRadius: '18px',
+              background: 'rgba(240,194,127,.06)',
+              pointerEvents: 'none',
+              zIndex: 10,
+            }}
+          />
+        )}
         <div
           style={{
             display: 'flex',
@@ -513,6 +562,7 @@ function PearlCarousel({
 
             return (
               <div
+                ref={isCentered ? cardMeasureRef : undefined}
                 key={`${game.id}-${i}`}
                 onClick={() => handleCardClick(i)}
                 style={{
@@ -523,8 +573,8 @@ function PearlCarousel({
                   transition: isDragging ? 'none' : `opacity 0.4s ${easing}, transform 0.4s ${easing}`,
                   borderRadius: '18px',
                   padding: '18px 18px 20px',
-                  border: isCentered ? '2px solid rgba(255,255,255,.12)' : '2px solid rgba(255,255,255,.06)',
-                  background: isCentered ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.03)',
+                  border: '2px solid transparent',
+                  background: isCentered ? 'rgba(255,255,255,.03)' : 'rgba(255,255,255,.03)',
                   backdropFilter: 'blur(4px)',
                   cursor: isCentered ? 'default' : 'pointer',
                 }}

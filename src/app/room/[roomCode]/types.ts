@@ -26,4 +26,5 @@ export const GAME_DISPLAY_NAMES: Record<string, string> = {
   'whos-deal': "Who's Deal?",
   'minesweeper': 'Land Mines',
   'battleship': 'Battleship',
+  'wordle': 'Daily Pearl',
 };

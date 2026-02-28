@@ -48,6 +48,14 @@ export const GAME_REGISTRY: GameConfig[] = [
     maxPlayers: 2,
     icon: '🚢',
   },
+  {
+    id: 'wordle',
+    name: 'Daily Pearl',
+    description: 'Guess the daily word. Six tries. New pearl every 12 hours.',
+    minPlayers: 1,
+    maxPlayers: 1,
+    icon: '🦪',
+  },
 ];
 
 export function getGameConfig(gameId: string): GameConfig | undefined {
