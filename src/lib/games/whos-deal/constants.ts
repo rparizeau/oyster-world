@@ -4,5 +4,6 @@ export const KITTY_SIZE = 4;
 export const DEFAULT_TARGET_SCORE = 10;
 export const VALID_TARGET_SCORES = [5, 7, 10, 11] as const;
 export const BOT_ACTION_DELAY_RANGE_MS = [1500, 3000] as const;
+export const BOT_LAST_CARD_DELAY_RANGE_MS = [400, 800] as const;
 export const ROUND_RESULT_DISPLAY_MS = 5000;
 export const TRICK_RESULT_DISPLAY_MS = 3000;

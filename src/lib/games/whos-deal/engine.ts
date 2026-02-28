@@ -13,6 +13,7 @@ import {
   TRICKS_PER_ROUND,
   KITTY_SIZE,
   BOT_ACTION_DELAY_RANGE_MS,
+  BOT_LAST_CARD_DELAY_RANGE_MS,
   ROUND_RESULT_DISPLAY_MS,
 } from './constants';
 import { getWhosDealBotAction } from './bots';
@@ -56,8 +57,8 @@ function shuffleDeck(deck: Card[]): Card[] {
 
 // --- Bot timing ---
 
-export function getBotActionTimestamp(): number {
-  const [min, max] = BOT_ACTION_DELAY_RANGE_MS;
+export function getBotActionTimestamp(lastCard = false): number {
+  const [min, max] = lastCard ? BOT_LAST_CARD_DELAY_RANGE_MS : BOT_ACTION_DELAY_RANGE_MS;
   return Date.now() + min + Math.random() * (max - min);
 }
 
@@ -125,6 +126,12 @@ function dealRound(state: WhosDealGameState): WhosDealGameState {
 
 // --- Helper: set bot timing if next player is bot ---
 
+function isLastCard(state: WhosDealGameState): boolean {
+  if (!state.round || state.round.trumpPhase !== 'playing') return false;
+  const playerId = state.seats[state.round.currentTurnSeatIndex];
+  return (state.round.hands[playerId]?.length ?? 0) === 1;
+}
+
 function withBotTiming(state: WhosDealGameState, players: Player[]): WhosDealGameState {
   if (!state.round) return state;
   const phase = state.round.trumpPhase;
@@ -134,7 +141,7 @@ function withBotTiming(state: WhosDealGameState, players: Player[]): WhosDealGam
   const currentPlayerId = state.seats[state.round.currentTurnSeatIndex];
   const currentPlayer = players.find(p => p.id === currentPlayerId);
   if (currentPlayer?.isBot) {
-    return { ...state, botActionAt: getBotActionTimestamp() };
+    return { ...state, botActionAt: getBotActionTimestamp(isLastCard(state)) };
   }
   return state;
 }
@@ -697,7 +704,7 @@ export function computeBotTiming(state: WhosDealGameState, players: Player[]): n
   const currentPlayerId = state.seats[state.round.currentTurnSeatIndex];
   const currentPlayer = players.find(p => p.id === currentPlayerId);
   if (currentPlayer?.isBot) {
-    return getBotActionTimestamp();
+    return getBotActionTimestamp(isLastCard(state));
   }
   return null;
 }
