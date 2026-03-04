@@ -23,6 +23,12 @@ const quicksand = Quicksand({
 export const metadata: Metadata = {
   title: "My Oyster World",
   description: "Your world, your games.",
+  applicationName: "My Oyster World",
+  appleWebApp: {
+    capable: true,
+    title: "Oyster World",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {

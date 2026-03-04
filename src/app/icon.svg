@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%">
+      <stop offset="0%" stop-color="#0f1832"/>
+      <stop offset="100%" stop-color="#080c1a"/>
+    </radialGradient>
+    <radialGradient id="pearl" cx="38%" cy="30%">
+      <stop offset="0%" stop-color="#fff"/>
+      <stop offset="20%" stop-color="#f5ece2"/>
+      <stop offset="50%" stop-color="#ead8c0"/>
+      <stop offset="100%" stop-color="#bfab8e"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%">
+      <stop offset="0%" stop-color="rgba(240,194,127,.18)"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- Glow -->
+  <circle cx="256" cy="256" r="200" fill="url(#glow)"/>
+  <!-- Pearl -->
+  <circle cx="256" cy="256" r="140" fill="url(#pearl)"/>
+  <!-- Globe lines -->
+  <ellipse cx="256" cy="256" rx="140" ry="45" fill="none" stroke="rgba(139,115,85,.12)" stroke-width="2"/>
+  <ellipse cx="256" cy="256" rx="57" ry="140" fill="none" stroke="rgba(139,115,85,.09)" stroke-width="2"/>
+  <!-- Highlight -->
+  <ellipse cx="210" cy="215" rx="45" ry="34" fill="rgba(255,255,255,.15)" transform="rotate(-18,210,215)"/>
+  <circle cx="200" cy="205" r="14" fill="rgba(255,255,255,.3)"/>
+  <!-- Sparkle -->
+  <text x="370" y="130" font-size="36" fill="rgba(240,194,127,.5)">&#10022;</text>
+</svg>
