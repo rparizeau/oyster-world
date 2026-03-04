@@ -135,6 +135,10 @@ export default function RoomPage() {
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || 'Failed to start game');
+      } else {
+        // Optimistically update status so we don't depend on the Pusher event
+        // (which can be missed if the subscription isn't ready yet)
+        setRoom((prev) => prev ? { ...prev, status: 'playing' } : prev);
       }
     } catch {
       setError('Failed to start game');
