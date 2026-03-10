@@ -219,7 +219,7 @@ function minesweeperReducer(
       const { rows, cols, cellSize, mineCount } = calculateGrid(
         action.containerWidth,
         action.containerHeight,
-        state.difficulty,
+        action.difficulty,
       );
       const totalCells = rows * cols;
       return {
@@ -227,7 +227,7 @@ function minesweeperReducer(
         cols,
         cellSize,
         mineCount,
-        difficulty: state.difficulty,
+        difficulty: action.difficulty,
         cells: Array.from({ length: totalCells }, (_, i) => ({
           index: i,
           mine: false,
@@ -306,8 +306,9 @@ export function useMinesweeper(difficulty: Difficulty) {
       type: 'new-game',
       containerWidth,
       containerHeight,
+      difficulty,
     });
-  }, []);
+  }, [difficulty]);
 
   // Timer interval — force re-render every second during 'playing' phase
   useEffect(() => {
@@ -392,6 +393,8 @@ export function useMinesweeper(difficulty: Difficulty) {
         const cell = game.cells[index];
         if (!cell || cell.revealed) return;
 
+        // Prevent iOS default long-press behavior (context menu, text selection)
+        e.preventDefault();
         const touch = e.touches[0];
         setPressingIndex(index);
         longPressRef.current = {
@@ -432,8 +435,10 @@ export function useMinesweeper(difficulty: Difficulty) {
           const wasFired = longPressRef.current.fired;
           longPressRef.current = null;
           setPressingIndex(null);
-          // If long press fired, prevent the tap from also revealing
+          // If long press fired, it already flagged — don't also reveal
           if (wasFired) return;
+          // Quick tap — reveal the cell (since preventDefault blocked onClick)
+          dispatch({ type: 'reveal', index });
         } else {
           setPressingIndex(null);
         }

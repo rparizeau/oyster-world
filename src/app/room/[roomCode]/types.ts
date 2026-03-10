@@ -18,6 +18,7 @@ export interface Toast {
   id: string;
   message: string;
   type: 'info' | 'success' | 'warning';
+  position?: 'left' | 'right' | 'center';
 }
 
 export const GAME_DISPLAY_NAMES: Record<string, string> = {

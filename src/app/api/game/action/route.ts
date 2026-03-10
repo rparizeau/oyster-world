@@ -7,7 +7,7 @@ import type { Room } from '@/lib/types';
 import type { GameState as TPGameState } from '@/lib/games/terrible-people';
 import type { FourKateState } from '@/lib/games/4-kate';
 import { BOT_MOVE_DELAY_MS } from '@/lib/games/4-kate/constants';
-import { VALID_TARGET_SCORES } from '@/lib/games/whos-deal/constants';
+import { VALID_TARGET_SCORES, TRICK_RESULT_DISPLAY_MS } from '@/lib/games/whos-deal/constants';
 import type { WhosDealGameState } from '@/lib/games/whos-deal';
 import { WhosDealError, computeBotTiming, getSeatIndex, getTeamForSeat } from '@/lib/games/whos-deal';
 import { TerriblePeopleError } from '@/lib/games/terrible-people';
@@ -518,9 +518,14 @@ export async function POST(request: Request) {
   // For Who's Deal?: set botActionAt if it's now a bot's turn
   if (room.gameId === 'whos-deal') {
     const wdState = newState as WhosDealGameState;
+    const wdOldState = room.game as WhosDealGameState;
     const botAt = computeBotTiming(wdState, room.players);
     if (botAt) {
-      stateToSave = { ...wdState, botActionAt: botAt };
+      // If a trick just completed, ensure bot waits for trick display
+      const trickJustCompleted = wdOldState.round && wdState.round
+        && wdState.round.tricksPlayed > wdOldState.round.tricksPlayed;
+      const minBotAt = trickJustCompleted ? Date.now() + TRICK_RESULT_DISPLAY_MS : 0;
+      stateToSave = { ...wdState, botActionAt: Math.max(botAt, minBotAt) };
     }
   }
 

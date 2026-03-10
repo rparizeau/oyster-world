@@ -15,6 +15,7 @@ import {
   BOT_ACTION_DELAY_RANGE_MS,
   BOT_LAST_CARD_DELAY_RANGE_MS,
   ROUND_RESULT_DISPLAY_MS,
+  TRICK_RESULT_DISPLAY_MS,
 } from './constants';
 import { getWhosDealBotAction } from './bots';
 
@@ -901,6 +902,14 @@ export const whosDealModule: GameModule<WhosDealGameState> = {
         const newTricksPlayed = newState.round!.tricksPlayed;
 
         if (newTricksPlayed > oldTricksPlayed) {
+          // A trick just completed — ensure next bot waits for trick display
+          if (newState.botActionAt) {
+            const minBotAt = Date.now() + TRICK_RESULT_DISPLAY_MS;
+            if (newState.botActionAt < minBotAt) {
+              newState = { ...newState, botActionAt: minBotAt };
+            }
+          }
+
           const winningSeatIndex = newState.round!.trickLeadSeatIndex;
           const winningTeam = getTeamForSeat(winningSeatIndex);
 

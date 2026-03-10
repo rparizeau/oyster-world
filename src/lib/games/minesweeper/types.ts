@@ -39,5 +39,5 @@ export type MinesweeperAction =
   | { type: 'reveal'; index: number }
   | { type: 'flag'; index: number }
   | { type: 'chord'; index: number }
-  | { type: 'new-game'; containerWidth: number; containerHeight: number }
+  | { type: 'new-game'; containerWidth: number; containerHeight: number; difficulty: Difficulty }
   | { type: 'tick' };

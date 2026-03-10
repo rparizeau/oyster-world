@@ -1,7 +1,7 @@
 import type { Difficulty } from './types';
 
 // Grid sizing
-export const MIN_CELL_SIZE = 36;
+export const MIN_CELL_SIZE = 28;
 export const MIN_COLS = 8;
 export const MAX_COLS = 20;
 export const MIN_ROWS = 10;

@@ -158,7 +158,7 @@ export default function WhosDealGameView({
 
   if (!round) return null;
 
-  const isMyTurn = mySeatIndex === round.currentTurnSeatIndex;
+  const isMyTurn = mySeatIndex === round.currentTurnSeatIndex && !trickWinner;
   const isInactivePartner = round.goingAlone && mySeatIndex === round.inactivePartnerSeatIndex;
   const seatMappings = mySeatIndex >= 0 ? getSeatMappings(mySeatIndex) : [];
 
@@ -184,7 +184,9 @@ export default function WhosDealGameView({
         targetScore={gameState.targetScore}
         tricksWon={round.tricksWon}
         trumpPhase={round.trumpPhase}
-        roundsPlayed={gameState.roundsPlayed}
+        trumpSuit={round.trumpSuit}
+        callingTeam={round.callingTeam}
+        ledSuit={ledSuit}
       />
 
       {/* Table Area */}
@@ -246,15 +248,6 @@ export default function WhosDealGameView({
                 )}
               </div>
 
-              {/* Trump & Led suit badges (always present, unset state when no trump) */}
-              <div className="flex items-center gap-4 mt-1">
-                <TableBadge
-                  suit={round.trumpSuit}
-                  label="TRUMP"
-                  teamColor={round.callingTeam === 'a' ? 'a' : round.callingTeam === 'b' ? 'b' : null}
-                />
-                <TableBadge suit={ledSuit} label="LED" />
-              </div>
             </div>
           </div>
         </div>
@@ -292,12 +285,6 @@ export default function WhosDealGameView({
           mySeatIndex={mySeatIndex}
         />
 
-        {/* Playing to target */}
-        {(round.trumpPhase === 'playing' || round.trumpPhase === 'dealer_discard') && (
-          <div className="mt-1 text-center">
-            <span className="text-xs" style={{ color: 'rgba(232,230,240,.2)' }}>Playing to {gameState.targetScore}</span>
-          </div>
-        )}
       </div>
 
       {/* Bottom Seat Info (dealer chip, name tag, badge) */}
@@ -312,16 +299,10 @@ export default function WhosDealGameView({
             ) : (
               <div className="absolute -top-1 -left-1 w-6 h-6 opacity-0" />
             )}
-            <div className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate font-semibold text-cream`} style={{ background: isMyTurn ? 'rgba(107,191,163,.15)' : 'rgba(26,82,118,.4)', border: `2px solid ${isMyTurn ? 'rgba(107,191,163,.6)' : myTeam === 'a' ? 'var(--shallow-water)' : myTeam === 'b' ? 'var(--coral)' : 'transparent'}` }}>
+            <div className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate font-semibold`} style={{ background: isMyTurn ? (myTeam === 'a' ? 'rgba(126,184,212,.4)' : 'rgba(232,168,124,.4)') : 'rgba(26,82,118,.4)', border: `2px solid ${myTeam === 'a' ? 'var(--shallow-water)' : myTeam === 'b' ? 'var(--coral)' : 'transparent'}`, color: myTeam === 'a' ? 'var(--shallow-water)' : myTeam === 'b' ? 'var(--coral)' : 'var(--cream)' }}>
               <span className="truncate max-w-[80px]">{displayName(room.players.find(p => p.id === playerId))}</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-1 flex-shrink-0" style={{ background: 'rgba(240,194,127,.15)', color: 'var(--pearl)' }}>YOU</span>
             </div>
-          </div>
-          {/* Badge row */}
-          <div className="h-6 flex items-center justify-center">
-            {trickWinner?.seatIndex === mySeatIndex && round.trumpPhase === 'playing' && (
-              <span className="text-glass text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(107,191,163,.15)' }}>✓ WON</span>
-            )}
           </div>
         </div>
       )}
@@ -363,36 +344,35 @@ function Scoreboard({
   targetScore,
   tricksWon,
   trumpPhase,
-  roundsPlayed,
+  trumpSuit,
+  callingTeam,
+  ledSuit,
 }: {
   teams: ClientWhosDealState['teams'];
   targetScore: number;
   tricksWon: { a: number; b: number };
   trumpPhase: string;
-  roundsPlayed: number;
+  trumpSuit: Suit | null;
+  callingTeam: 'a' | 'b' | null;
+  ledSuit: Suit | null;
 }) {
-  const showTricks = trumpPhase === 'playing' || trumpPhase === 'round_over';
-
   return (
     <div className="px-4 py-2.5 mb-7 flex items-start justify-between" style={{ background: 'rgba(13,27,62,.5)', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
       <div className="flex items-start gap-2 min-w-0 flex-1">
         {/* Team A */}
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--shallow-water)' }} />
             <span className="text-sm truncate mr-1" style={{ color: 'var(--shallow-water)' }}>Team A</span>
             <span className="text-2xl font-bold tabular-nums flex-shrink-0 leading-none" style={{ color: 'var(--shallow-water)' }}>{teams.a.score}</span>
             {teams.a.score === targetScore - 1 && (
               <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded flex-shrink-0" style={{ background: 'rgba(126,184,212,.15)', color: 'var(--shallow-water)' }}>GP</span>
             )}
           </div>
-          {showTricks && (
-            <div className="flex items-center gap-1 ml-0.5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i < tricksWon.a ? 'var(--shallow-water)' : 'rgba(126,184,212,.2)' }} />
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-1 ml-0.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i < tricksWon.a ? 'var(--shallow-water)' : 'rgba(126,184,212,.2)' }} />
+            ))}
+          </div>
         </div>
 
         <span className="text-sm flex-shrink-0 mt-0.5" style={{ color: 'rgba(232,230,240,.2)' }}>vs</span>
@@ -400,27 +380,34 @@ function Scoreboard({
         {/* Team B */}
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--coral)' }} />
             <span className="text-sm truncate mr-1" style={{ color: 'var(--coral)' }}>Team B</span>
             <span className="text-2xl font-bold tabular-nums flex-shrink-0 leading-none" style={{ color: 'var(--coral)' }}>{teams.b.score}</span>
             {teams.b.score === targetScore - 1 && (
               <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded flex-shrink-0" style={{ background: 'rgba(232,168,124,.15)', color: 'var(--coral)' }}>GP</span>
             )}
           </div>
-          {showTricks && (
-            <div className="flex items-center gap-1 ml-0.5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i < tricksWon.b ? 'var(--coral)' : 'rgba(232,168,124,.2)' }} />
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-1 ml-0.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i < tricksWon.b ? 'var(--coral)' : 'rgba(232,168,124,.2)' }} />
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Info */}
-      <div className="flex flex-col items-end text-xs flex-shrink-0 mt-0.5" style={{ color: 'rgba(232,230,240,.25)' }}>
-        <span>to {targetScore}</span>
-        <span>Rd {roundsPlayed}</span>
+      {/* Trump & Led */}
+      <div className="flex items-center gap-4 flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold uppercase" style={{ color: 'rgba(245,230,202,.6)' }}>TRUMP</span>
+          <span className={`text-2xl ${trumpSuit && SUIT_COLOR[trumpSuit] === 'red' ? 'text-red-400' : ''}`} style={{ color: !trumpSuit ? 'rgba(245,230,202,.25)' : SUIT_COLOR[trumpSuit] === 'red' ? undefined : '#ffffff' }}>
+            {trumpSuit ? SUIT_SYMBOL[trumpSuit] : '\u2013'}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold uppercase" style={{ color: 'rgba(245,230,202,.6)' }}>LED</span>
+          <span className={`text-2xl ${ledSuit && SUIT_COLOR[ledSuit] === 'red' ? 'text-red-400' : ''}`} style={{ color: !ledSuit ? 'rgba(245,230,202,.25)' : SUIT_COLOR[ledSuit] === 'red' ? undefined : '#ffffff' }}>
+            {ledSuit ? SUIT_SYMBOL[ledSuit] : '\u2013'}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -475,11 +462,15 @@ function OpponentSeat({
           <div className="absolute -top-1 -left-1 w-5 h-5 opacity-0" />
         )}
         <div
-          className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate ${wonTrick ? 'ring-1 ring-glass' : isActive ? 'ring-1 ring-glass/40' : ''}`}
+          className={`h-7 rounded-full px-3 flex items-center gap-1.5 text-sm truncate ${wonTrick ? 'ring-1 ring-glass' : ''}`}
           style={{
-            background: wonTrick ? 'rgba(107,191,163,.15)' : isActive ? 'rgba(107,191,163,.1)' : isHuman ? 'rgba(26,82,118,.4)' : 'rgba(13,27,62,.3)',
-            border: `2px solid ${isActive ? 'rgba(107,191,163,.6)' : teamColor}`,
-            color: isHuman ? 'var(--cream)' : 'rgba(232,230,240,.35)',
+            background: wonTrick
+              ? 'rgba(107,191,163,.15)'
+              : isActive
+                ? team === 'a' ? 'rgba(126,184,212,.4)' : 'rgba(232,168,124,.4)'
+                : isHuman ? 'rgba(26,82,118,.4)' : 'rgba(13,27,62,.3)',
+            border: `2px solid ${teamColor}`,
+            color: teamColor,
             fontWeight: isHuman ? 600 : 400,
           }}
         >
@@ -640,8 +631,8 @@ function TrumpCallingUI({
 
   if (!isMyTurn) {
     return (
-      <div className="min-h-[120px] flex items-center justify-center">
-        <p className="text-sm" style={{ color: 'rgba(232,230,240,.35)' }}>
+      <div className="min-h-0 flex items-center justify-center">
+        <p className="text-sm" style={{ color: 'rgba(245,230,202,.7)' }}>
           {displayName(currentTurnPlayer)} is deciding...
         </p>
       </div>
@@ -651,7 +642,7 @@ function TrumpCallingUI({
   // Round 1
   if (round.trumpPhase === 'round1') {
     return (
-      <div className="min-h-[120px] flex flex-col items-center justify-center gap-3 animate-fade-in">
+      <div className="min-h-0 flex flex-col items-center justify-center gap-3 animate-fade-in">
         <div className="flex gap-3">
           <button
             onClick={() => onCallTrump({ pickUp: true, goAlone })}
@@ -678,7 +669,7 @@ function TrumpCallingUI({
   const suits: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
 
   return (
-    <div className="min-h-[120px] flex flex-col items-center justify-center gap-3 animate-fade-in">
+    <div className="min-h-0 flex flex-col items-center justify-center gap-3 animate-fade-in">
       <div className="grid grid-cols-2 gap-2">
         {suits.map(suit => {
           const disabled = suit === round.faceUpCard.suit;
@@ -748,11 +739,11 @@ function GoAloneToggle({ checked, onToggle }: { checked: boolean; onToggle: () =
       className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-all ${
         checked ? 'text-glass' : ''
       }`}
-      style={!checked ? { color: 'rgba(245,230,202,.4)' } : undefined}
+      style={!checked ? { color: 'rgba(245,230,202,.7)' } : undefined}
     >
       <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
         checked ? 'border-glass bg-glass' : ''
-      }`} style={!checked ? { borderColor: 'rgba(232,230,240,.3)' } : undefined}>
+      }`} style={!checked ? { borderColor: 'rgba(245,230,202,.5)' } : undefined}>
         {checked && (
           <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -818,7 +809,7 @@ function StatusText({
 
   return (
     <div className="h-8 flex items-center justify-center">
-      <span className="text-sm" style={{ color: 'rgba(232,230,240,.35)' }}>
+      <span className="text-sm" style={{ color: 'rgba(245,230,202,.85)' }}>
         {currentTurnPlayer?.isBot
           ? `${displayName(currentTurnPlayer)} is thinking...`
           : `Waiting for ${displayName(currentTurnPlayer)}...`}
@@ -885,7 +876,7 @@ function PlayerHand({
 
   return (
     <div className="flex flex-col items-center gap-2 px-3">
-      <div className="flex justify-center gap-1.5 overflow-x-auto flex-nowrap pb-1 px-1 w-full">
+      <div className="flex justify-center gap-1.5 overflow-x-auto flex-nowrap pt-3 pb-1 px-1 w-full">
         {hand.map((card) => {
           const isPlayable = isDiscard || playableIds.has(card.id);
           const isSelected = selectedCard === card.id;
@@ -935,8 +926,6 @@ function PlayerHand({
           >
             {isDiscard ? 'Discard' : 'Play Card'}
           </button>
-        ) : canInteract ? (
-          <span className="text-sm" style={{ color: 'rgba(232,230,240,.2)' }}>Tap a card to {isDiscard ? 'discard' : 'select'}</span>
         ) : null}
       </div>
     </div>

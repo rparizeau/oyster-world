@@ -271,7 +271,11 @@ function MinesweeperCell({
         justifyContent: 'center',
         fontWeight: 'bold',
         lineHeight: 1,
-      }}
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+        WebkitTouchCallout: 'none',
+        touchAction: 'manipulation',
+      } as React.CSSProperties}
     >
       {content}
     </div>

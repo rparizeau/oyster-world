@@ -138,7 +138,12 @@ export default function RoomPage() {
       } else {
         // Optimistically update status so we don't depend on the Pusher event
         // (which can be missed if the subscription isn't ready yet)
-        setRoom((prev) => prev ? { ...prev, status: 'playing' } : prev);
+        setRoom((prev) => {
+          if (!prev) return prev;
+          // For minesweeper, persist difficulty into game state so the client can read it
+          const game = settings?.difficulty ? { ...prev.game, difficulty: settings.difficulty } : prev.game;
+          return { ...prev, status: 'playing' as const, game };
+        });
       }
     } catch {
       setError('Failed to start game');
@@ -326,7 +331,7 @@ export default function RoomPage() {
           onHome={handleLeave}
           onAction={handleStepOut}
         />
-        <div className="flex-1">
+        <div className="flex-1 flex flex-col min-h-0">
           <BattleshipGameView
             room={room}
             battleshipState={battleshipState}

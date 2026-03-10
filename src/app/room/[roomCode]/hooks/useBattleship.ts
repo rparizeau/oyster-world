@@ -16,7 +16,7 @@ export function useBattleship(
   roomCh: Channel | null,
   playerCh: Channel | null,
   setRoom: React.Dispatch<React.SetStateAction<Room | null>>,
-  addToast: (message: string, type: 'info' | 'success' | 'warning') => void,
+  addToast: (message: string, type: 'info' | 'success' | 'warning', position?: 'left' | 'right' | 'center') => void,
 ): BattleshipResult {
   const [battleshipState, setBattleshipState] = useState<SanitizedBattleshipState | null>(null);
 
@@ -77,11 +77,10 @@ export function useBattleship(
     };
 
     const onShipSunk = (data: { shot: ShotResult; shipName: string }) => {
-      if (data.shot.attackerId === playerId) {
-        addToast(`You sunk their ${data.shipName}!`, 'success');
-      } else {
-        addToast(`Your ${data.shipName} was sunk!`, 'warning');
-      }
+      setBattleshipState((prev) => {
+        if (!prev) return prev;
+        return { ...prev, lastShot: { ...data.shot, result: 'sunk', shipName: data.shipName } };
+      });
     };
 
     const onGameOver = (data: {

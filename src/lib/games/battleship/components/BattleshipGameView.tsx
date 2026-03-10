@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { Room } from '@/lib/types';
 import type { SanitizedBattleshipState, ShipPlacement, Coordinate, ShipTemplate } from '../types';
 import { SHIP_SETS, VALID_COMBOS } from '../constants';
@@ -399,7 +399,7 @@ function SetupGrid({
             return (
               <button
                 key={key}
-                className={`${cellStyle} border border-[rgba(245,230,202,0.08)] transition-colors ${
+                className={`${cellStyle} border border-[rgba(245,230,202,0.18)] transition-colors ${
                   disabled ? 'cursor-default' : 'cursor-pointer active:brightness-125'
                 }`}
                 onClick={() => onCellTap(row, col)}
@@ -438,10 +438,42 @@ function PlayingPhase({
   const isMyTurn = state.isMyTurn;
   const gridSize = state.gridSize;
 
+  const mePlayer = room.players.find((p) => p.id === playerId);
   const opponentId = state.turnOrder[0] === playerId ? state.turnOrder[1] : state.turnOrder[0];
   const opponentPlayer = room.players.find((p) => p.id === opponentId);
   const currentTurnPlayer = room.players.find((p) => p.id === state.currentTurn);
   const winnerPlayer = state.winner ? room.players.find((p) => p.id === state.winner) : null;
+
+  const myShipsRemaining = state.myBoard.ships.filter((s) => !s.sunk).length;
+
+  // Speech bubble driven by lastShot
+  const [speechBubble, setSpeechBubble] = useState<{ side: 'left' | 'right'; text: string; key: number } | null>(null);
+  const shotKeyRef = useRef(0);
+  const prevLastShotRef = useRef(state.lastShot);
+
+  useEffect(() => {
+    if (!state.lastShot || state.lastShot === prevLastShotRef.current) return;
+    prevLastShotRef.current = state.lastShot;
+
+    const isMine = state.lastShot.attackerId === playerId;
+    let side: 'left' | 'right' = isMine ? 'right' : 'left';
+    let text: string;
+    if (state.lastShot.result === 'sunk' && state.lastShot.shipName) {
+      // Sunk message comes from the defender (whose ship was sunk)
+      side = isMine ? 'right' : 'left';
+      text = `You sunk my ${state.lastShot.shipName}!`;
+    } else {
+      text = state.lastShot.result === 'hit' ? 'Hit!' : 'Miss';
+    }
+
+    const key = ++shotKeyRef.current;
+    setSpeechBubble({ side, text, key });
+
+    const timer = setTimeout(() => {
+      setSpeechBubble((prev) => (prev?.key === key ? null : prev));
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [state.lastShot, playerId]);
 
   // Build sets for fast lookup on attack grid
   const attackHits = useMemo(() => {
@@ -531,35 +563,20 @@ function PlayingPhase({
     statusText = `Waiting for ${currentTurnPlayer?.name || 'opponent'}...`;
   }
 
-  // Shot result text
-  const lastShotText = state.lastShot
-    ? state.lastShot.result === 'sunk'
-      ? `${state.lastShot.shipName} sunk!`
-      : state.lastShot.result === 'hit'
-        ? 'Hit!'
-        : 'Miss'
-    : '';
-
   const colLabels = 'ABCDEFGHIJ'.slice(0, gridSize);
 
   return (
-    <div className="flex flex-1 flex-col p-3 pb-6 max-w-lg mx-auto w-full animate-fade-in">
+    <div className="flex flex-1 flex-col max-w-lg mx-auto w-full animate-fade-in">
+      <div className="flex-1 flex flex-col p-3 pb-2 overflow-auto">
       {/* Status */}
       <div className="text-center mb-2">
         <p className={`text-sm font-semibold ${
           isGameOver
             ? (winnerPlayer?.id === playerId ? 'text-accent' : 'text-muted')
-            : isMyTurn ? 'text-foreground' : 'text-muted'
+            : isMyTurn ? 'text-glass' : 'text-muted'
         } ${!isGameOver && !isMyTurn && currentTurnPlayer?.isBot ? 'animate-pulse-soft' : ''}`}>
           {statusText}
         </p>
-        {lastShotText && !isGameOver && (
-          <p className={`text-xs font-bold mt-0.5 ${
-            state.lastShot?.result === 'miss' ? 'text-muted' : 'text-[var(--coral)]'
-          }`}>
-            {lastShotText}
-          </p>
-        )}
       </div>
 
       {/* Attack grid — opponent's board */}
@@ -567,7 +584,7 @@ function PlayingPhase({
         <div className="text-[0.6rem] uppercase tracking-[2px] font-bold text-muted mb-1 text-center">
           {opponentPlayer?.name || 'Opponent'}
         </div>
-        <div className={`w-full max-w-[min(100%,340px)] mx-auto ${isMyTurn && !isGameOver ? 'ring-2 ring-glass/30 rounded' : ''}`}>
+        <div className={`w-full max-w-[min(100%,340px)] mx-auto pt-1 ${isMyTurn && !isGameOver ? 'ring-2 ring-glass/50 rounded' : ''}`}>
           <div className="flex ml-5">
             {colLabels.split('').map((label) => (
               <div key={label} className="flex-1 text-center text-[0.45rem] text-muted font-bold">{label}</div>
@@ -603,7 +620,7 @@ function PlayingPhase({
                 return (
                   <button
                     key={key}
-                    className={`${bg} border border-[rgba(245,230,202,0.08)] relative transition-colors ${
+                    className={`${bg} border border-[rgba(245,230,202,0.18)] relative transition-colors ${
                       isMyTurn && !isGameOver && !isFired
                         ? 'cursor-pointer hover:bg-[rgba(126,184,212,0.15)] active:bg-[rgba(126,184,212,0.2)]'
                         : 'cursor-default'
@@ -618,7 +635,7 @@ function PlayingPhase({
                     )}
                     {isMiss && (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-1.5 h-1.5 rounded-full bg-[rgba(245,230,202,0.15)]" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-[rgba(245,230,202,0.3)]" />
                       </div>
                     )}
                   </button>
@@ -629,19 +646,12 @@ function PlayingPhase({
         </div>
       </div>
 
-      {/* Stats bar */}
-      <div className="flex justify-center gap-6 mb-2 text-[0.65rem]">
-        <span className="text-muted">
-          Ships remaining: <span className="text-cream font-bold">{state.opponentBoard.shipsRemaining}</span>
-        </span>
-      </div>
-
       {/* Defense grid — my board */}
-      <div>
+      <div className="mt-2">
         <div className="text-[0.6rem] uppercase tracking-[2px] font-bold text-muted mb-1 text-center">
           Your Fleet
         </div>
-        <div className="w-[55%] max-w-[220px] mx-auto">
+        <div className="w-[55%] max-w-[220px] mx-auto pt-1">
           <div className="flex ml-4">
             {colLabels.split('').map((label) => (
               <div key={label} className="flex-1 text-center text-[0.4rem] text-muted font-bold">{label}</div>
@@ -674,7 +684,7 @@ function PlayingPhase({
                 return (
                   <div
                     key={key}
-                    className={`${bg} border border-[rgba(245,230,202,0.06)] relative`}
+                    className={`${bg} border border-[rgba(245,230,202,0.18)] relative`}
                   >
                     {isHit && (
                       <div className="absolute inset-0 flex items-center justify-center">
@@ -683,7 +693,7 @@ function PlayingPhase({
                     )}
                     {isMiss && (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-1 h-1 rounded-full bg-[rgba(245,230,202,0.12)]" />
+                        <div className="w-1 h-1 rounded-full bg-[rgba(245,230,202,0.3)]" />
                       </div>
                     )}
                   </div>
@@ -705,6 +715,40 @@ function PlayingPhase({
           </button>
         </div>
       )}
+      </div>
+
+      {/* Bottom toolbar — player names + ship counts + speech bubbles */}
+      <div
+        className="relative flex items-center justify-between px-4 py-3"
+        style={{ background: 'rgba(13,27,62,.5)', borderTop: '1px solid rgba(255,255,255,.04)' }}
+      >
+        {/* Speech bubbles — absolute, float above toolbar */}
+        {speechBubble && (
+          <div
+            key={speechBubble.key}
+            className={`absolute ${speechBubble.side === 'left' ? 'left-4' : 'right-4'} bottom-full mb-2 rounded-xl px-3 py-1.5 text-sm font-semibold shadow-lg animate-fade-in ${
+              speechBubble.text === 'Miss'
+                ? 'bg-[rgba(245,230,202,0.9)] text-[#080c1a]'
+                : speechBubble.text.includes('sunk')
+                  ? 'bg-[var(--star)] text-white'
+                  : 'bg-[var(--pearl)]/90 text-[#080c1a]'
+            }`}
+          >
+            {speechBubble.text}
+          </div>
+        )}
+
+        {/* Left — me */}
+        <div className="flex items-center gap-2.5">
+          <span className="text-cream font-bold text-sm">{mePlayer?.name || 'You'}</span>
+          <span className="text-cream/80 text-sm font-semibold">{myShipsRemaining} ships</span>
+        </div>
+        {/* Right — opponent */}
+        <div className="flex items-center gap-2.5">
+          <span className="text-cream/80 text-sm font-semibold">{state.opponentBoard.shipsRemaining} ships</span>
+          <span className="text-cream font-bold text-sm">{opponentPlayer?.name || 'Opponent'}</span>
+        </div>
+      </div>
     </div>
   );
 }
