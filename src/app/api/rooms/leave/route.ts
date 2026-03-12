@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRoom, atomicRoomUpdate, deleteRoom, deleteSession, deleteHeartbeat } from '@/lib/redis';
+import { getRoom, atomicRoomUpdate, deleteSession, deleteHeartbeat } from '@/lib/redis';
 import { getPusherServer, roomChannel } from '@/lib/pusher';
 import { createBotForSeat } from '@/lib/utils';
 import { roomNotFound, unauthorized, apiError } from '@/lib/errors';
@@ -36,21 +36,6 @@ export async function POST(request: Request) {
   const remainingHumans = room.players.filter(
     (p) => !p.isBot && p.id !== playerId
   );
-
-  if (remainingHumans.length === 0) {
-    // No humans left — destroy room
-    await deleteRoom(roomCode);
-    await deleteSession(playerId);
-    await deleteHeartbeat(roomCode, playerId);
-
-    try {
-      await getPusherServer().trigger(roomChannel(roomCode), 'room-destroyed', {});
-    } catch {
-      // Non-fatal
-    }
-
-    return NextResponse.json({ success: true });
-  }
 
   // Replace player with bot and potentially transfer ownership
   const replacementBot = createBotForSeat(

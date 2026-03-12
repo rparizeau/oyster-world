@@ -62,6 +62,8 @@ export async function POST(request: Request) {
     createdAt: now,
     status: 'waiting',
     ownerId: playerId,
+    createdBy: name,
+    joinedPlayers: [],
     gameId,
     players,
     game: null,

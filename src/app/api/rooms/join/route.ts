@@ -70,7 +70,9 @@ export async function POST(request: Request) {
         };
       }
 
-      return { ...current, players: updatedPlayers, settings: updatedSettings };
+      const joinedPlayers = [...(current.joinedPlayers || []), name];
+
+      return { ...current, players: updatedPlayers, settings: updatedSettings, joinedPlayers };
     });
     return updated !== null;
   };

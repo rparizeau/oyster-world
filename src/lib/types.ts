@@ -9,6 +9,10 @@ export interface Room {
   status: 'waiting' | 'playing' | 'finished';
   ownerId: string;           // Current room owner (transfers on leave)
 
+  // Analytics
+  createdBy?: string;        // Name of the player who created the room
+  joinedPlayers?: string[];  // Names of human players who joined
+
   // Game selection
   gameId: string;            // From GAME_REGISTRY (e.g., 'terrible-people', '4-kate')
 
