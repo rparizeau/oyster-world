@@ -49,6 +49,14 @@ export const GAME_REGISTRY: GameConfig[] = [
     icon: '🚢',
   },
   {
+    id: 'backgammon',
+    name: 'Backgammon',
+    description: 'Race your checkers home. Hit, block, and bear off.',
+    minPlayers: 2,
+    maxPlayers: 2,
+    icon: '🎲',
+  },
+  {
     id: 'wordle',
     name: 'Daily Pearl',
     description: 'Guess the daily word. Six tries. New pearl every 12 hours.',

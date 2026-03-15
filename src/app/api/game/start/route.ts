@@ -179,6 +179,16 @@ export async function POST(request: Request) {
         // Non-fatal
       }
     }
+  } else if (room.gameId === 'backgammon') {
+    // Backgammon: no hidden info — send full sanitized state
+    const sanitized = gameModule.sanitizeForPlayer(gameState, '');
+    try {
+      await pusher.trigger(roomChannel(roomCode), 'game-started', {
+        gameState: sanitized,
+      });
+    } catch {
+      // Non-fatal
+    }
   } else if (room.gameId === 'minesweeper') {
     // Minesweeper: single-player, client owns game state — just signal start
     try {

@@ -88,6 +88,15 @@ export async function POST(request: Request) {
     };
   }
 
+  // Initialize default settings for Backgammon
+  if (gameId === 'backgammon') {
+    room.settings = {
+      matchEnabled: false,
+      matchTarget: 5,
+      cubeEnabled: false,
+    };
+  }
+
   // Initialize default settings for Minesweeper
   if (gameId === 'minesweeper') {
     room.settings = {

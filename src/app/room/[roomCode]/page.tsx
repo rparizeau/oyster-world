@@ -7,6 +7,7 @@ import WhosDealGameView from '@/lib/games/whos-deal/components/WhosDealGameView'
 import TerriblePeopleGameView from '@/lib/games/terrible-people/components/TerriblePeopleGameView';
 import MinesweeperGameView from '@/lib/games/minesweeper/components/MinesweeperGameView';
 import BattleshipGameView from '@/lib/games/battleship/components/BattleshipGameView';
+import BackgammonGameView from '@/lib/games/backgammon/components/BackgammonGameView';
 import WordleGameView from '@/lib/games/wordle/components/WordleGameView';
 import DeepBar from '@/components/DeepBar';
 
@@ -18,6 +19,7 @@ import { useTerriblePeople } from './hooks/useTerriblePeople';
 import { useWhosDeal } from './hooks/useWhosDeal';
 import { useMinesweeper } from './hooks/useMinesweeper';
 import { useBattleship } from './hooks/useBattleship';
+import { useBackgammon } from './hooks/useBackgammon';
 import { useWordle } from './hooks/useWordle';
 import type { Difficulty } from '@/lib/games/minesweeper/types';
 
@@ -80,6 +82,18 @@ export default function RoomPage() {
     handlePlaceShips,
     handleFire,
   } = useBattleship(roomCode, playerId, room, roomCh, playerCh, setRoom, addToast);
+
+  const {
+    backgammonState,
+    legalMoves: bgLegalMoves,
+    handleRoll: handleBgRoll,
+    handleMove: handleBgMove,
+    handleUndoMove: handleBgUndoMove,
+    handleConfirmMoves: handleBgConfirmMoves,
+    handleOfferDouble: handleBgOfferDouble,
+    handleAcceptDouble: handleBgAcceptDouble,
+    handleDeclineDouble: handleBgDeclineDouble,
+  } = useBackgammon(roomCode, playerId, room, roomCh, playerCh, setRoom, addToast);
 
   // Minesweeper — client-side game state
   const minesweeperDifficulty: Difficulty =
@@ -339,6 +353,40 @@ export default function RoomPage() {
             isOwner={isOwner}
             onPlaceShips={handlePlaceShips}
             onFire={handleFire}
+            onPlayAgain={handleReturnToLobby}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Backgammon game view
+  if (room.status === 'playing' && backgammonState && room.gameId === 'backgammon') {
+    return (
+      <div className="flex min-h-dvh flex-col bg-depth-deep overflow-x-hidden">
+        <ToastContainer toasts={toasts} />
+        <ConnectionBanner status={connectionStatus} />
+        <DeepBar
+          gameName={GAME_DISPLAY_NAMES[room.gameId] ?? room.gameId}
+          actionLabel="Lobby"
+          showAction={true}
+          onHome={handleLeave}
+          onAction={handleStepOut}
+        />
+        <div className="flex-1 flex flex-col min-h-0">
+          <BackgammonGameView
+            room={room}
+            backgammonState={backgammonState}
+            playerId={playerId}
+            isOwner={isOwner}
+            legalMoves={bgLegalMoves}
+            onRoll={handleBgRoll}
+            onMove={handleBgMove}
+            onUndoMove={handleBgUndoMove}
+            onConfirmMoves={handleBgConfirmMoves}
+            onOfferDouble={handleBgOfferDouble}
+            onAcceptDouble={handleBgAcceptDouble}
+            onDeclineDouble={handleBgDeclineDouble}
             onPlayAgain={handleReturnToLobby}
           />
         </div>

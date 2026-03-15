@@ -49,6 +49,13 @@ const GAMES: GameCardInfo[] = [
     maxPlayers: 2,
   },
   {
+    id: 'backgammon',
+    name: 'Backgammon',
+    description: 'Race your checkers home. Hit, block, and bear off.',
+    icon: '🎲',
+    maxPlayers: 2,
+  },
+  {
     id: 'wordle',
     name: 'Daily Pearl',
     description: 'Guess the daily word. Six tries. New pearl every 12 hours.',

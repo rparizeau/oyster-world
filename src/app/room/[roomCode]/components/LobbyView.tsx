@@ -43,11 +43,22 @@ export default function LobbyView({
   const isSinglePlayer = gameConfig?.maxPlayers === 1;
   const isMinesweeper = room.gameId === 'minesweeper';
   const isBattleship = room.gameId === 'battleship';
+  const isBackgammon = room.gameId === 'backgammon';
   const teams = room.settings?.teams as { a: string[]; b: string[] } | undefined;
   const targetScore = (room.settings?.targetScore as number) || 10;
 
   const [difficulty, setDifficulty] = useState<Difficulty>(
     (room.settings?.difficulty as Difficulty) || 'easy',
+  );
+
+  const [bgMatchEnabled, setBgMatchEnabled] = useState<boolean>(
+    (room.settings?.matchEnabled as boolean) || false,
+  );
+  const [bgMatchTarget, setBgMatchTarget] = useState<number>(
+    (room.settings?.matchTarget as number) || 5,
+  );
+  const [bgCubeEnabled, setBgCubeEnabled] = useState<boolean>(
+    (room.settings?.cubeEnabled as boolean) || false,
   );
 
   const [bsGridSize, setBsGridSize] = useState<number>(
@@ -69,6 +80,16 @@ export default function LobbyView({
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [gameInProgress, stepOutTime]);
+
+  const handleBgSetting = useCallback(async (type: string, payload: Record<string, unknown>) => {
+    try {
+      await fetch('/api/game/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomCode: room.roomCode, playerId, type, payload }),
+      });
+    } catch { /* Non-fatal */ }
+  }, [room.roomCode, playerId]);
 
   const handleSetGridSize = useCallback(async (gridSize: number) => {
     setBsGridSize(gridSize);
@@ -263,6 +284,88 @@ export default function LobbyView({
         </div>
       )}
 
+      {/* Backgammon Settings */}
+      {isBackgammon && (
+        <div className="w-full max-w-sm space-y-4">
+          {/* Match Play Toggle */}
+          <div>
+            <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold mb-3" style={{ color: 'rgba(232,230,240,.25)' }}>Match Play</h2>
+            <div className="flex gap-1.5">
+              {([false, true] as const).map((val) => (
+                <button
+                  key={String(val)}
+                  onClick={() => {
+                    if (!isOwner) return;
+                    setBgMatchEnabled(val);
+                    handleBgSetting('SET_MATCH_ENABLED', { value: val });
+                  }}
+                  disabled={!isOwner}
+                  className="flex-1 rounded-lg py-2.5 text-sm font-bold transition-all min-h-[44px]"
+                  style={bgMatchEnabled === val
+                    ? { border: '2px solid var(--pearl)', background: 'rgba(240,194,127,.06)', color: 'var(--pearl)' }
+                    : { border: '2px solid rgba(255,255,255,.05)', background: 'rgba(255,255,255,.02)', color: 'rgba(232,230,240,.35)' }
+                  }
+                >
+                  {val ? 'On' : 'Off'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Match Target */}
+          {bgMatchEnabled && (
+            <div>
+              <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold mb-3" style={{ color: 'rgba(232,230,240,.25)' }}>Points to Win</h2>
+              <div className="flex gap-1.5">
+                {[3, 5, 7, 9, 11].map((score) => (
+                  <button
+                    key={score}
+                    onClick={() => {
+                      if (!isOwner) return;
+                      setBgMatchTarget(score);
+                      handleBgSetting('SET_MATCH_TARGET', { value: score });
+                    }}
+                    disabled={!isOwner}
+                    className="flex-1 rounded-lg py-2.5 text-lg font-bold transition-all min-h-[44px]"
+                    style={bgMatchTarget === score
+                      ? { border: '2px solid var(--pearl)', background: 'rgba(240,194,127,.06)', color: 'var(--pearl)' }
+                      : { border: '2px solid rgba(255,255,255,.05)', background: 'rgba(255,255,255,.02)', color: 'rgba(232,230,240,.35)' }
+                    }
+                  >
+                    {score}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Doubling Cube Toggle */}
+          <div>
+            <h2 className="text-[0.65em] uppercase tracking-[2px] font-bold mb-3" style={{ color: 'rgba(232,230,240,.25)' }}>Doubling Cube</h2>
+            <div className="flex gap-1.5">
+              {([false, true] as const).map((val) => (
+                <button
+                  key={String(val)}
+                  onClick={() => {
+                    if (!isOwner) return;
+                    setBgCubeEnabled(val);
+                    handleBgSetting('SET_CUBE_ENABLED', { value: val });
+                  }}
+                  disabled={!isOwner}
+                  className="flex-1 rounded-lg py-2.5 text-sm font-bold transition-all min-h-[44px]"
+                  style={bgCubeEnabled === val
+                    ? { border: '2px solid var(--pearl)', background: 'rgba(240,194,127,.06)', color: 'var(--pearl)' }
+                    : { border: '2px solid rgba(255,255,255,.05)', background: 'rgba(255,255,255,.02)', color: 'rgba(232,230,240,.35)' }
+                  }
+                >
+                  {val ? 'On' : 'Off'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Battleship Settings */}
       {isBattleship && (
         <div className="w-full max-w-sm space-y-4">
@@ -343,6 +446,7 @@ export default function LobbyView({
             onClick={() => {
               if (isMinesweeper) return onStartGame({ difficulty });
               if (isBattleship) return onStartGame({ gridSize: bsGridSize, shipSet: bsShipSet });
+              if (isBackgammon) return onStartGame({ matchEnabled: bgMatchEnabled, matchTarget: bgMatchTarget, cubeEnabled: bgCubeEnabled });
               return onStartGame();
             }}
             disabled={starting}

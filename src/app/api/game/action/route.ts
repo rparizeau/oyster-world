@@ -13,6 +13,8 @@ import { WhosDealError, computeBotTiming, getSeatIndex, getTeamForSeat } from '@
 import { TerriblePeopleError } from '@/lib/games/terrible-people';
 import type { BattleshipState, ShotResult } from '@/lib/games/battleship';
 import { BOT_SHOT_DELAY_MS } from '@/lib/games/battleship';
+import type { BackgammonState, CheckerMove } from '@/lib/games/backgammon';
+import { BOT_ROLL_DELAY_MS as BG_BOT_ROLL_DELAY_MS, BOT_MOVE_DELAY_MS as BG_BOT_MOVE_DELAY_MS, MATCH_TARGET_OPTIONS, getBackgammonLegalMoves } from '@/lib/games/backgammon';
 
 function actionIdKey(roomCode: string, playerId: string): string {
   return `actionId:${roomCode}:${playerId}`;
@@ -66,6 +68,62 @@ async function handleLobbyAction(
         const updated = await atomicRoomUpdate(roomCode, (current) => {
           if (current.status !== 'waiting') return null;
           return { ...current, settings: { ...current.settings, shipSet } };
+        });
+        if (!updated) return apiError('Failed to update setting', 'RACE_CONDITION', 409);
+        if (actionId) await redis.set(actionIdKey(roomCode, playerId), actionId, { ex: 3600 });
+        await refreshRoomTTL(roomCode);
+        try { await pusher.trigger(roomChannel(roomCode), 'settings-updated', { settings: updated.settings }); } catch { /* Non-fatal */ }
+        return NextResponse.json({ success: true });
+      }
+    }
+  }
+
+  // Handle Backgammon lobby settings
+  if (room.gameId === 'backgammon' && room.status === 'waiting') {
+    if (type === 'SET_MATCH_ENABLED' || type === 'SET_MATCH_TARGET' || type === 'SET_CUBE_ENABLED') {
+      if (room.ownerId !== playerId) {
+        return apiError('Only the room owner can do this', 'NOT_OWNER', 403);
+      }
+      if (actionId) {
+        const lastActionId = await redis.get<string>(actionIdKey(roomCode, playerId));
+        if (lastActionId === actionId) return NextResponse.json({ success: true });
+      }
+      const pusher = getPusherServer();
+
+      if (type === 'SET_MATCH_ENABLED') {
+        const { value } = (payload || {}) as { value?: boolean };
+        if (typeof value !== 'boolean') return apiError('Invalid value', 'INVALID_SETTING', 400);
+        const updated = await atomicRoomUpdate(roomCode, (current) => {
+          if (current.status !== 'waiting') return null;
+          return { ...current, settings: { ...current.settings, matchEnabled: value } };
+        });
+        if (!updated) return apiError('Failed to update setting', 'RACE_CONDITION', 409);
+        if (actionId) await redis.set(actionIdKey(roomCode, playerId), actionId, { ex: 3600 });
+        await refreshRoomTTL(roomCode);
+        try { await pusher.trigger(roomChannel(roomCode), 'settings-updated', { settings: updated.settings }); } catch { /* Non-fatal */ }
+        return NextResponse.json({ success: true });
+      }
+
+      if (type === 'SET_MATCH_TARGET') {
+        const { value } = (payload || {}) as { value?: number };
+        if (!value || !MATCH_TARGET_OPTIONS.includes(value)) return apiError('Invalid match target', 'INVALID_SETTING', 400);
+        const updated = await atomicRoomUpdate(roomCode, (current) => {
+          if (current.status !== 'waiting') return null;
+          return { ...current, settings: { ...current.settings, matchTarget: value } };
+        });
+        if (!updated) return apiError('Failed to update setting', 'RACE_CONDITION', 409);
+        if (actionId) await redis.set(actionIdKey(roomCode, playerId), actionId, { ex: 3600 });
+        await refreshRoomTTL(roomCode);
+        try { await pusher.trigger(roomChannel(roomCode), 'settings-updated', { settings: updated.settings }); } catch { /* Non-fatal */ }
+        return NextResponse.json({ success: true });
+      }
+
+      if (type === 'SET_CUBE_ENABLED') {
+        const { value } = (payload || {}) as { value?: boolean };
+        if (typeof value !== 'boolean') return apiError('Invalid value', 'INVALID_SETTING', 400);
+        const updated = await atomicRoomUpdate(roomCode, (current) => {
+          if (current.status !== 'waiting') return null;
+          return { ...current, settings: { ...current.settings, cubeEnabled: value } };
         });
         if (!updated) return apiError('Failed to update setting', 'RACE_CONDITION', 409);
         if (actionId) await redis.set(actionIdKey(roomCode, playerId), actionId, { ex: 3600 });
@@ -515,6 +573,25 @@ export async function POST(request: Request) {
     }
   }
 
+  // For Backgammon: set botActionAt if it's now a bot's turn
+  if (room.gameId === 'backgammon') {
+    const bgState = newState as BackgammonState;
+    if ((bgState.phase === 'rolling' || bgState.phase === 'moving' || bgState.phase === 'double_offered') && !bgState.botActionAt) {
+      let botPlayerId: string | null = null;
+      if (bgState.phase === 'double_offered' && bgState.cube.offeredBy) {
+        const respondingColor = bgState.cube.offeredBy === 'white' ? 'black' : 'white';
+        botPlayerId = Object.entries(bgState.colorMap).find(([, c]) => c === respondingColor)?.[0] ?? null;
+      } else {
+        botPlayerId = Object.entries(bgState.colorMap).find(([, c]) => c === bgState.currentTurn)?.[0] ?? null;
+      }
+      const nextPlayer = botPlayerId ? room.players.find((p) => p.id === botPlayerId) : null;
+      if (nextPlayer?.isBot) {
+        const delay = bgState.phase === 'rolling' ? BG_BOT_ROLL_DELAY_MS : BG_BOT_MOVE_DELAY_MS;
+        stateToSave = { ...bgState, botActionAt: Date.now() + delay } as unknown as typeof newState;
+      }
+    }
+  }
+
   // For Who's Deal?: set botActionAt if it's now a bot's turn
   if (room.gameId === 'whos-deal') {
     const wdState = newState as WhosDealGameState;
@@ -653,6 +730,101 @@ export async function POST(request: Request) {
           await pusher.trigger(channel, 'game-over', {
             winner: bsNew.winner,
             boards: bsNew.boards,
+          });
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // Trigger Pusher events for Backgammon
+  if (room.gameId === 'backgammon') {
+    const bgOld = room.game as BackgammonState;
+    const bgNew = stateToSave as unknown as BackgammonState;
+    const pusher = getPusherServer();
+    const channel = roomChannel(roomCode);
+    const bgColor = bgOld.colorMap[playerId];
+
+    try {
+      if (type === 'ROLL') {
+        const legalMoves = bgNew.dice ? getBackgammonLegalMoves(bgNew) : [];
+        await pusher.trigger(channel, 'dice-rolled', {
+          color: bgColor,
+          dice: bgNew.dice?.values ?? [],
+          legalMoves,
+        });
+        // Auto-pass
+        if (bgNew.phase === 'rolling' && bgNew.currentTurn !== bgOld.currentTurn) {
+          await pusher.trigger(channel, 'turn-passed', {
+            color: bgColor,
+            reason: 'no_legal_moves',
+          });
+        }
+      }
+
+      if (type === 'MOVE_CHECKER' && payload) {
+        const move = payload as CheckerMove;
+        const destIdx = typeof move.to === 'number' ? move.to - 1 : -1;
+        const hit = destIdx >= 0
+          && bgOld.points[destIdx]?.color !== null
+          && bgOld.points[destIdx]?.color !== bgColor
+          && bgOld.points[destIdx]?.count === 1;
+        const nextLegalMoves = bgNew.dice ? getBackgammonLegalMoves(bgNew) : [];
+        await pusher.trigger(channel, 'checker-moved', {
+          move,
+          pendingMoves: bgNew.pendingMoves.map((e: { move: CheckerMove }) => e.move),
+          remainingDice: bgNew.dice?.remaining ?? [],
+          hit,
+          legalMoves: nextLegalMoves,
+        });
+      }
+
+      if (type === 'UNDO_MOVE') {
+        await pusher.trigger(channel, 'move-undone', {
+          pendingMoves: bgNew.pendingMoves.map((e: { move: CheckerMove }) => e.move),
+          remainingDice: bgNew.dice?.remaining ?? [],
+        });
+      }
+
+      if (type === 'CONFIRM_MOVES') {
+        await pusher.trigger(channel, 'turn-confirmed', {
+          gameState: JSON.parse(JSON.stringify(bgNew)),
+        });
+        if (bgNew.phase === 'game_over' || bgNew.phase === 'match_over') {
+          await pusher.trigger(channel, 'game-over', {
+            winner: bgNew.winner,
+            winType: bgNew.winType,
+            pointsScored: bgNew.pointsScored,
+            match: bgNew.match,
+          });
+        }
+      }
+
+      if (type === 'OFFER_DOUBLE') {
+        await pusher.trigger(channel, 'double-offered', {
+          offeredBy: bgColor,
+          cubeValue: bgNew.cube.value,
+        });
+      }
+
+      if (type === 'ACCEPT_DOUBLE') {
+        await pusher.trigger(channel, 'double-accepted', {
+          acceptedBy: bgColor,
+          newCubeValue: bgNew.cube.value,
+        });
+      }
+
+      if (type === 'DECLINE_DOUBLE') {
+        await pusher.trigger(channel, 'double-declined', {
+          declinedBy: bgColor,
+        });
+        if (bgNew.phase === 'game_over' || bgNew.phase === 'match_over') {
+          await pusher.trigger(channel, 'game-over', {
+            winner: bgNew.winner,
+            winType: bgNew.winType,
+            pointsScored: bgNew.pointsScored,
+            match: bgNew.match,
           });
         }
       }
