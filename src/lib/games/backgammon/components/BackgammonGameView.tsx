@@ -13,6 +13,7 @@ interface Props {
   onRoll: () => void;
   onMove: (from: number | 'bar', to: number | 'off', dieUsed: number) => void;
   onUndoMove: () => void;
+  onUndoTo: (keepMoves: number) => void;
   onConfirmMoves: () => void;
   onOfferDouble: () => void;
   onAcceptDouble: () => void;
@@ -32,7 +33,7 @@ const CHECKER_BORDER: Record<CheckerColor, string> = {
 
 export default function BackgammonGameView({
   room, backgammonState: state, playerId, isOwner,
-  legalMoves, onRoll, onMove, onUndoMove, onConfirmMoves,
+  legalMoves, onRoll, onMove, onUndoMove, onUndoTo, onConfirmMoves,
   onOfferDouble, onAcceptDouble, onDeclineDouble, onPlayAgain,
 }: Props) {
   const [selectedFrom, setSelectedFrom] = useState<number | 'bar' | null>(null);
@@ -122,7 +123,7 @@ export default function BackgammonGameView({
   const doubleOfferedToMe = state.phase === 'double_offered' && state.cube.offeredBy !== myColor;
 
   return (
-    <div className="flex flex-col items-center gap-3 p-3 pb-6 animate-fade-in max-w-lg mx-auto w-full">
+    <div className="flex flex-col items-center gap-3 p-3 pt-6 pb-6 animate-fade-in max-w-lg mx-auto w-full">
       {/* Opponent info */}
       <div className="w-full flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
@@ -130,8 +131,8 @@ export default function BackgammonGameView({
           <span className="text-sm font-semibold" style={{ color: 'rgba(245,230,202,.6)' }}>{oppName}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'rgba(232,230,240,.35)' }}>
-            off: {oppColor ? state.borneOff[oppColor] : 0}/15
+          <span className="text-xs" style={{ color: 'rgba(232,230,240,.55)' }}>
+            Borne off: {oppColor ? state.borneOff[oppColor] : 0}/15
           </span>
           {state.match && oppColor && (
             <span className="text-xs font-bold" style={{ color: 'var(--pearl)' }}>
@@ -146,7 +147,7 @@ export default function BackgammonGameView({
         className="w-full rounded-xl overflow-hidden"
         style={{
           background: 'rgba(20,40,60,.6)',
-          border: '2px solid rgba(240,194,127,.15)',
+          border: isMyTurn ? '2px solid rgba(126,212,126,.5)' : '2px solid rgba(240,194,127,.15)',
         }}
       >
         {/* Top row */}
@@ -200,55 +201,76 @@ export default function BackgammonGameView({
         </div>
 
         {/* Center: dice + controls */}
-        <div className="flex items-center justify-center gap-3 py-2.5 px-2" style={{ minHeight: '48px' }}>
-          {state.dice && state.dice.values && state.dice.remaining && (
-            <div className="flex gap-1.5">
-              {state.dice.values.map((val, i) => {
-                const remaining = state.dice!.remaining;
-                const values = state.dice!.values;
-                const remainingCount = remaining.filter(d => d === val).length;
-                const totalCount = values.filter(d => d === val).length;
-                const usedCount = totalCount - remainingCount;
-                const indexAmongSameValue = values.slice(0, i + 1).filter(d => d === val).length;
-                const isUsed = indexAmongSameValue <= usedCount;
+        <div className="flex items-center justify-center gap-3 py-3.5 px-3" style={{ height: '56px' }}>
+          {state.dice && state.dice.values && state.dice.remaining && (() => {
+            // Show all dice: 2 for normal, 4 for doubles
+            const allDice = state.dice!.values;
+            const remaining = state.dice!.remaining;
 
-                return (
-                  <div
-                    key={i}
-                    className="w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold"
-                    style={{
-                      background: isUsed ? 'rgba(255,255,255,.08)' : 'rgba(240,194,127,.15)',
-                      color: isUsed ? 'rgba(232,230,240,.25)' : 'var(--cream)',
-                      opacity: isUsed ? 0.35 : 1,
-                      border: '1px solid rgba(255,255,255,.1)',
-                    }}
-                  >
-                    {val}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            // Track which dice are used (left to right)
+            const remainingCopy = [...remaining];
+            const diceStatus = allDice.map(val => {
+              const idx = remainingCopy.indexOf(val);
+              if (idx !== -1) {
+                remainingCopy.splice(idx, 1);
+                return false; // not used
+              }
+              return true; // used
+            });
 
-          {/* Roll button */}
+            const hasPendingMoves = isMyTurn && state.pendingMoves.length > 0;
+
+            // Map each die to which pending move index it corresponds to
+            // Used die 0 = move 0, used die 1 = move 1, etc.
+            let usedCount = 0;
+            const dieToMoveIndex = diceStatus.map(used => used ? usedCount++ : -1);
+
+            return (
+              <div className="flex gap-2">
+                {allDice.map((val, i) => {
+                  const isUsed = diceStatus[i];
+                  const moveIndex = dieToMoveIndex[i];
+
+                  function handleDieClick() {
+                    if (!isUsed || !hasPendingMoves) return;
+                    // Undo all moves from this die onward (keep moves before it)
+                    onUndoTo(moveIndex);
+                  }
+
+                  return (
+                    <div
+                      key={i}
+                      onClick={handleDieClick}
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold transition-all duration-200"
+                      style={{
+                        background: isUsed ? 'rgba(240,194,127,.08)' : 'rgba(240,194,127,.18)',
+                        color: isUsed ? 'rgba(232,230,240,.35)' : 'var(--cream)',
+                        opacity: isUsed ? 0.7 : 1,
+                        border: isUsed ? '1px solid rgba(240,194,127,.1)' : '1px solid rgba(240,194,127,.3)',
+                        cursor: isUsed && hasPendingMoves ? 'pointer' : 'default',
+                        transform: isUsed ? 'scale(0.9)' : 'scale(1)',
+                      }}
+                    >
+                      {val}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Roll button — same height as dice */}
           {isMyTurn && state.phase === 'rolling' && (
-            <button onClick={onRoll} className="btn-primary text-sm px-5 py-2">
-              Roll
+            <button onClick={onRoll} className="btn-primary text-sm font-bold h-10 px-5 rounded-lg">
+              🎲 Roll
             </button>
           )}
 
           {/* Offer Double */}
           {canOfferDouble && (
-            <button onClick={onOfferDouble} className="btn-secondary text-xs px-3 py-1.5">
+            <button onClick={onOfferDouble} className="btn-secondary text-xs px-3 h-10 rounded-lg">
               Double
             </button>
-          )}
-
-          {/* Waiting for opponent */}
-          {!isMyTurn && state.phase === 'rolling' && (
-            <span className="text-xs" style={{ color: 'rgba(232,230,240,.3)' }}>
-              Waiting for {oppName}...
-            </span>
           )}
         </div>
 
@@ -317,18 +339,6 @@ export default function BackgammonGameView({
         </button>
       )}
 
-      {/* Move controls */}
-      {isMyTurn && state.phase === 'moving' && state.pendingMoves.length > 0 && (
-        <div className="flex gap-2">
-          <button onClick={onUndoMove} className="btn-secondary text-sm px-4 py-2">
-            Undo
-          </button>
-          <button onClick={onConfirmMoves} className="btn-primary text-sm px-5 py-2">
-            Confirm
-          </button>
-        </div>
-      )}
-
       {/* Double offered to me */}
       {doubleOfferedToMe && (
         <div className="w-full rounded-xl p-4 text-center"
@@ -371,8 +381,8 @@ export default function BackgammonGameView({
           <span className="text-sm font-semibold text-cream">{myName}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'rgba(232,230,240,.35)' }}>
-            off: {myColor ? state.borneOff[myColor] : 0}/15
+          <span className="text-xs" style={{ color: 'rgba(232,230,240,.55)' }}>
+            Borne off: {myColor ? state.borneOff[myColor] : 0}/15
           </span>
           {state.match && myColor && (
             <span className="text-xs font-bold" style={{ color: 'var(--pearl)' }}>
@@ -381,6 +391,28 @@ export default function BackgammonGameView({
           )}
         </div>
       </div>
+
+      {/* Turn indicator — below board */}
+      {state.phase !== 'game_over' && state.phase !== 'match_over' && (
+        <div
+          className="w-full text-center py-2 rounded-lg text-sm font-semibold"
+          style={{
+            background: isMyTurn ? 'rgba(126,212,126,.1)' : 'rgba(126,184,212,.06)',
+            color: isMyTurn ? '#7ed47e' : 'rgba(232,230,240,.4)',
+            border: isMyTurn ? '1px solid rgba(126,212,126,.3)' : '1px solid rgba(232,230,240,.08)',
+          }}
+        >
+          {isMyTurn
+            ? state.phase === 'rolling'
+              ? 'Your turn — Roll the dice'
+              : state.phase === 'moving'
+                ? 'Your turn — Move your checkers'
+                : 'Your turn'
+            : state.phase === 'double_offered' && doubleOfferedToMe
+              ? `${oppName} offers a double`
+              : `${oppName}'s turn`}
+        </div>
+      )}
 
       {/* Game Over / Match Over */}
       {(state.phase === 'game_over' || state.phase === 'match_over') && (
@@ -450,34 +482,50 @@ function PointColumn({ pointNum, point, isTop, isSelected, isDestination, isSele
   onClick: () => void;
 }) {
   const isEven = pointNum % 2 === 0;
-  const triangleColor = isEven ? 'rgba(240,194,127,.12)' : 'rgba(126,184,212,.12)';
+  const triColor = isEven ? 'rgba(240,194,127,.25)' : 'rgba(126,184,212,.25)';
   const maxShow = 5;
   const checkers = point.count > 0 ? Math.min(point.count, maxShow) : 0;
   const overflow = point.count > maxShow ? point.count - maxShow : 0;
 
   return (
     <div
-      className="flex-1 flex flex-col items-center py-1 min-h-[120px] relative"
+      className="flex-1 flex flex-col items-center min-h-[160px] relative"
       style={{
-        background: isDestination ? 'rgba(126,212,126,.15)' : 'transparent',
         cursor: isSelectable || isDestination ? 'pointer' : 'default',
       }}
       onClick={onClick}
     >
-      {/* Triangle */}
-      <div
+      {/* Triangle pointing toward center */}
+      <svg
         className="absolute inset-x-0"
-        style={{
-          [isTop ? 'top' : 'bottom']: 0,
-          height: '100%',
-          background: `linear-gradient(${isTop ? 'to bottom' : 'to top'}, ${triangleColor}, transparent 85%)`,
-        }}
-      />
+        style={{ [isTop ? 'top' : 'bottom']: 0 }}
+        viewBox="0 0 40 110"
+        preserveAspectRatio="none"
+        width="100%"
+        height="85%"
+      >
+        <polygon
+          points={isTop ? '0,0 40,0 20,110' : '0,110 40,110 20,0'}
+          fill={triColor}
+        />
+      </svg>
 
-      {/* Checkers */}
+      {/* Destination highlight */}
+      {isDestination && (
+        <div className="absolute inset-0" style={{ background: 'rgba(126,212,126,.12)' }} />
+      )}
+
+      {/* Checkers — stacked from edge toward center */}
       <div
-        className={`relative z-10 flex flex-col items-center gap-0.5 ${isTop ? '' : 'flex-col-reverse'}`}
-        style={{ paddingTop: isTop ? '4px' : 0, paddingBottom: isTop ? 0 : '4px' }}
+        className="relative z-10 flex items-center gap-0.5 w-full"
+        style={{
+          paddingTop: isTop ? '3px' : 0,
+          paddingBottom: isTop ? 0 : '3px',
+          height: '100%',
+          flexDirection: isTop ? 'column' : 'column-reverse',
+          justifyContent: 'flex-start',
+          alignItems: 'center',
+        }}
       >
         {Array.from({ length: checkers }).map((_, i) => (
           <Checker
@@ -495,11 +543,11 @@ function PointColumn({ pointNum, point, isTop, isSelected, isDestination, isSele
         )}
       </div>
 
-      {/* Destination indicator */}
+      {/* Destination dot */}
       {isDestination && (
-        <div className="absolute inset-x-0 flex justify-center"
-          style={{ [isTop ? 'bottom' : 'top']: '4px' }}>
-          <div className="w-3 h-3 rounded-full" style={{ background: 'rgba(126,212,126,.5)' }} />
+        <div className="absolute inset-x-0 flex justify-center z-20"
+          style={{ [isTop ? 'bottom' : 'top']: '6px' }}>
+          <div className="w-3.5 h-3.5 rounded-full" style={{ background: 'rgba(126,212,126,.6)', border: '1px solid rgba(126,212,126,.8)' }} />
         </div>
       )}
     </div>

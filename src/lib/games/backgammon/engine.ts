@@ -374,8 +374,9 @@ function createInitialState(
   colorMap[players[0].id] = shuffled ? 'black' : 'white';
   colorMap[players[1].id] = shuffled ? 'white' : 'black';
 
-  // Random first turn
-  const currentTurn: CheckerColor = Math.random() < 0.5 ? 'white' : 'black';
+  // First turn goes to the first human player found
+  const humanPlayer = players.find(p => !p.isBot) ?? players[0];
+  const currentTurn: CheckerColor = colorMap[humanPlayer.id];
 
   const cubeEnabled = settings?.cubeEnabled === true;
   const matchEnabled = settings?.matchEnabled === true;
@@ -385,10 +386,8 @@ function createInitialState(
     ? { target: matchTarget, scores: { white: 0, black: 0 }, crawfordGame: false, postCrawford: false }
     : null;
 
-  // Check if first turn is a bot
-  const firstPlayerId = getPlayerIdForColorFromMap(colorMap, currentTurn);
-  const firstPlayer = players.find(p => p.id === firstPlayerId);
-  const botActionAt = firstPlayer?.isBot ? Date.now() + BOT_ROLL_DELAY_MS : null;
+  // No botActionAt needed — human goes first
+  const botActionAt: number | null = null;
 
   return {
     points: initializeBoard(),
@@ -435,6 +434,8 @@ export const backgammonModule: GameModule<BackgammonState> = {
         return handleMoveChecker(state, color, action.payload as { from: number | 'bar'; to: number | 'off'; dieUsed: number });
       case 'UNDO_MOVE':
         return handleUndoMove(state, color);
+      case 'UNDO_TO':
+        return handleUndoTo(state, color, (action.payload as { keepMoves: number }).keepMoves);
       case 'CONFIRM_MOVES':
         return handleConfirmMoves(state, color);
       case 'OFFER_DOUBLE':
@@ -543,10 +544,29 @@ export const backgammonModule: GameModule<BackgammonState> = {
         data: {
           move,
           pendingMoves: newState.pendingMoves.map(e => e.move),
-          remainingDice: newState.dice?.remaining,
+          remainingDice: newState.dice?.remaining ?? [],
           hit: hitOpp,
         },
       });
+
+      // Auto-confirm happened (turn switched) — send full state so client updates
+      if (newState.currentTurn !== state.currentTurn) {
+        roomEvents.push({
+          event: 'turn-confirmed',
+          data: { gameState: JSON.parse(JSON.stringify(newState)) },
+        });
+        if (newState.phase === 'game_over' || newState.phase === 'match_over') {
+          roomEvents.push({
+            event: 'game-over',
+            data: {
+              winner: newState.winner,
+              winType: newState.winType,
+              pointsScored: newState.pointsScored,
+              match: newState.match,
+            },
+          });
+        }
+      }
     } else if (action.type === 'CONFIRM_MOVES') {
       roomEvents.push({
         event: 'turn-confirmed',
@@ -643,12 +663,9 @@ function handleRoll(state: BackgammonState, color: CheckerColor): BackgammonStat
       botActionAt: null,
     };
   } else {
-    // For bots, compute and store the move sequence
-    const currentPlayerId = getPlayerIdForColor(newState, color);
-    // We don't set botMoveQueue here; getBotAction will compute it
-    // But we do need to set botActionAt for the moving phase
+    // For bots, set immediate botActionAt so processAdvancement can chain
     if (newState.botActionAt !== null) {
-      newState = { ...newState, botActionAt: Date.now() + BOT_MOVE_DELAY_MS };
+      newState = { ...newState, botActionAt: Date.now() };
     }
   }
 
@@ -718,9 +735,9 @@ function handleMoveChecker(
     return doConfirmMoves(newState);
   }
 
-  // Set bot timing for next move
+  // Set immediate bot timing so processAdvancement chains without delay
   if (state.botActionAt !== null) {
-    newState = { ...newState, botActionAt: Date.now() + BOT_MOVE_DELAY_MS };
+    newState = { ...newState, botActionAt: Date.now() };
   }
 
   return newState;
@@ -743,6 +760,44 @@ function handleUndoMove(state: BackgammonState, color: CheckerColor): Backgammon
     borneOff: entry.boardBefore.borneOff,
     dice: state.dice ? { ...state.dice, remaining } : null,
     pendingMoves: pending,
+    botMoveQueue: undefined,
+  };
+}
+
+function handleUndoTo(state: BackgammonState, color: CheckerColor, keepMoves: number): BackgammonState {
+  if (state.phase !== 'moving' || state.currentTurn !== color) return state;
+  if (state.pendingMoves.length === 0) return state;
+  if (keepMoves < 0) keepMoves = 0;
+  if (keepMoves >= state.pendingMoves.length) return state;
+
+  // Restore board from the snapshot at the target point
+  const targetEntry = keepMoves > 0
+    ? state.pendingMoves[keepMoves - 1]
+    : null;
+  const firstEntry = state.pendingMoves[0];
+
+  // Collect all dice that will be returned
+  const returnedDice = state.pendingMoves.slice(keepMoves).map(e => e.move.dieUsed);
+  const remaining = [...(state.dice?.remaining || []), ...returnedDice];
+
+  // Board state: if keepMoves > 0, use the board AFTER that move (current state of that move's result)
+  // Otherwise, restore from the first move's boardBefore
+  const board = keepMoves > 0
+    ? targetEntry!.boardBefore // This is the board BEFORE the keepMoves-th move was applied
+    : firstEntry.boardBefore;
+
+  // Actually we need the board AFTER the last kept move, which is the boardBefore of the next move
+  const restoreBoard = keepMoves < state.pendingMoves.length
+    ? state.pendingMoves[keepMoves].boardBefore
+    : { points: state.points, bar: state.bar, borneOff: state.borneOff };
+
+  return {
+    ...state,
+    points: restoreBoard.points,
+    bar: restoreBoard.bar,
+    borneOff: restoreBoard.borneOff,
+    dice: state.dice ? { ...state.dice, remaining } : null,
+    pendingMoves: state.pendingMoves.slice(0, keepMoves),
     botMoveQueue: undefined,
   };
 }
@@ -789,13 +844,16 @@ function doConfirmMoves(state: BackgammonState): BackgammonState {
 
   // Switch turn
   const nextColor = opponent(state.currentTurn);
+
   return {
     ...state,
     currentTurn: nextColor,
     phase: 'rolling',
     dice: null,
     pendingMoves: [],
-    botActionAt: null,
+    // Keep botActionAt alive so processAdvancement can decide if the next player is a bot.
+    // If the next player is human, processAdvancement will skip (no bot found).
+    botActionAt: state.botActionAt !== null ? Date.now() + BOT_ROLL_DELAY_MS : null,
     botMoveQueue: undefined,
   };
 }

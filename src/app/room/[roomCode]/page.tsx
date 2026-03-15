@@ -89,6 +89,7 @@ export default function RoomPage() {
     handleRoll: handleBgRoll,
     handleMove: handleBgMove,
     handleUndoMove: handleBgUndoMove,
+    handleUndoTo: handleBgUndoTo,
     handleConfirmMoves: handleBgConfirmMoves,
     handleOfferDouble: handleBgOfferDouble,
     handleAcceptDouble: handleBgAcceptDouble,
@@ -383,6 +384,7 @@ export default function RoomPage() {
             onRoll={handleBgRoll}
             onMove={handleBgMove}
             onUndoMove={handleBgUndoMove}
+            onUndoTo={handleBgUndoTo}
             onConfirmMoves={handleBgConfirmMoves}
             onOfferDouble={handleBgOfferDouble}
             onAcceptDouble={handleBgAcceptDouble}

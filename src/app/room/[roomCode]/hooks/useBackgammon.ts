@@ -9,6 +9,7 @@ export interface BackgammonResult {
   handleRoll: () => void;
   handleMove: (from: number | 'bar', to: number | 'off', dieUsed: number) => void;
   handleUndoMove: () => void;
+  handleUndoTo: (keepMoves: number) => void;
   handleConfirmMoves: () => void;
   handleOfferDouble: () => void;
   handleAcceptDouble: () => void;
@@ -108,15 +109,9 @@ export function useBackgammon(
       });
     };
 
-    const onMoveUndone = (data: { pendingMoves: CheckerMove[]; remainingDice: number[] }) => {
-      // Re-fetch state since undo requires board restoration
-      setBackgammonState(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          dice: prev.dice ? { ...prev.dice, remaining: data.remainingDice } : null,
-        };
-      });
+    const onMoveUndone = (data: { gameState: SanitizedBackgammonState }) => {
+      setBackgammonState(data.gameState);
+      setLegalMoves([]);
     };
 
     const onTurnConfirmed = (data: { gameState: SanitizedBackgammonState }) => {
@@ -240,6 +235,9 @@ export function useBackgammon(
   const handleUndoMove = useCallback(() => sendAction('UNDO_MOVE'), [sendAction]);
   const handleConfirmMoves = useCallback(() => sendAction('CONFIRM_MOVES'), [sendAction]);
   const handleOfferDouble = useCallback(() => sendAction('OFFER_DOUBLE'), [sendAction]);
+  const handleUndoTo = useCallback((keepMoves: number) => {
+    sendAction('UNDO_TO', { keepMoves });
+  }, [sendAction]);
   const handleAcceptDouble = useCallback(() => sendAction('ACCEPT_DOUBLE'), [sendAction]);
   const handleDeclineDouble = useCallback(() => sendAction('DECLINE_DOUBLE'), [sendAction]);
 
@@ -249,6 +247,7 @@ export function useBackgammon(
     handleRoll,
     handleMove,
     handleUndoMove,
+    handleUndoTo,
     handleConfirmMoves,
     handleOfferDouble,
     handleAcceptDouble,

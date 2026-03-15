@@ -14,7 +14,8 @@ import { TerriblePeopleError } from '@/lib/games/terrible-people';
 import type { BattleshipState, ShotResult } from '@/lib/games/battleship';
 import { BOT_SHOT_DELAY_MS } from '@/lib/games/battleship';
 import type { BackgammonState, CheckerMove } from '@/lib/games/backgammon';
-import { BOT_ROLL_DELAY_MS as BG_BOT_ROLL_DELAY_MS, BOT_MOVE_DELAY_MS as BG_BOT_MOVE_DELAY_MS, MATCH_TARGET_OPTIONS, getBackgammonLegalMoves } from '@/lib/games/backgammon';
+import { MATCH_TARGET_OPTIONS, getBackgammonLegalMoves } from '@/lib/games/backgammon';
+import { processGameAdvancement } from '@/lib/gameAdvancement';
 
 function actionIdKey(roomCode: string, playerId: string): string {
   return `actionId:${roomCode}:${playerId}`;
@@ -586,8 +587,8 @@ export async function POST(request: Request) {
       }
       const nextPlayer = botPlayerId ? room.players.find((p) => p.id === botPlayerId) : null;
       if (nextPlayer?.isBot) {
-        const delay = bgState.phase === 'rolling' ? BG_BOT_ROLL_DELAY_MS : BG_BOT_MOVE_DELAY_MS;
-        stateToSave = { ...bgState, botActionAt: Date.now() + delay } as unknown as typeof newState;
+        // Use Date.now() so processGameAdvancement can act immediately from the action route
+        stateToSave = { ...bgState, botActionAt: Date.now() } as unknown as typeof newState;
       }
     }
   }
@@ -778,12 +779,27 @@ export async function POST(request: Request) {
           hit,
           legalMoves: nextLegalMoves,
         });
+
+        // Auto-confirm happened (turn switched) — send full state so client updates
+        if (bgNew.currentTurn !== bgOld.currentTurn) {
+          const sanitized = gameModule.sanitizeForPlayer(bgNew, playerId);
+          await pusher.trigger(channel, 'turn-confirmed', {
+            gameState: JSON.parse(JSON.stringify(sanitized)),
+          });
+          if (bgNew.phase === 'game_over' || bgNew.phase === 'match_over') {
+            await pusher.trigger(channel, 'game-over', {
+              winner: bgNew.winner,
+              winType: bgNew.winType,
+              pointsScored: bgNew.pointsScored,
+              match: bgNew.match,
+            });
+          }
+        }
       }
 
-      if (type === 'UNDO_MOVE') {
+      if (type === 'UNDO_MOVE' || type === 'UNDO_TO') {
         await pusher.trigger(channel, 'move-undone', {
-          pendingMoves: bgNew.pendingMoves.map((e: { move: CheckerMove }) => e.move),
-          remainingDice: bgNew.dice?.remaining ?? [],
+          gameState: JSON.parse(JSON.stringify(bgNew)),
         });
       }
 
@@ -830,6 +846,11 @@ export async function POST(request: Request) {
       }
     } catch {
       // Non-fatal
+    }
+
+    // Trigger bot advancement immediately instead of waiting for heartbeat
+    if (bgNew.botActionAt) {
+      processGameAdvancement(roomCode).catch(() => { /* Non-fatal */ });
     }
   }
 
