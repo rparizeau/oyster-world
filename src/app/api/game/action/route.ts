@@ -783,8 +783,10 @@ export async function POST(request: Request) {
         // Auto-confirm happened (turn switched) — send full state so client updates
         if (bgNew.currentTurn !== bgOld.currentTurn) {
           const sanitized = gameModule.sanitizeForPlayer(bgNew, playerId);
+          const confirmLegalMoves = bgNew.dice ? getBackgammonLegalMoves(bgNew) : [];
           await pusher.trigger(channel, 'turn-confirmed', {
             gameState: JSON.parse(JSON.stringify(sanitized)),
+            legalMoves: confirmLegalMoves,
           });
           if (bgNew.phase === 'game_over' || bgNew.phase === 'match_over') {
             await pusher.trigger(channel, 'game-over', {
@@ -798,14 +800,18 @@ export async function POST(request: Request) {
       }
 
       if (type === 'UNDO_MOVE' || type === 'UNDO_TO') {
+        const undoLegalMoves = bgNew.dice ? getBackgammonLegalMoves(bgNew) : [];
         await pusher.trigger(channel, 'move-undone', {
           gameState: JSON.parse(JSON.stringify(bgNew)),
+          legalMoves: undoLegalMoves,
         });
       }
 
       if (type === 'CONFIRM_MOVES') {
+        const confirmLegalMoves = bgNew.dice ? getBackgammonLegalMoves(bgNew) : [];
         await pusher.trigger(channel, 'turn-confirmed', {
           gameState: JSON.parse(JSON.stringify(bgNew)),
+          legalMoves: confirmLegalMoves,
         });
         if (bgNew.phase === 'game_over' || bgNew.phase === 'match_over') {
           await pusher.trigger(channel, 'game-over', {
@@ -849,8 +855,9 @@ export async function POST(request: Request) {
     }
 
     // Trigger bot advancement immediately instead of waiting for heartbeat
+    // Must await to ensure it completes before serverless function terminates
     if (bgNew.botActionAt) {
-      processGameAdvancement(roomCode).catch(() => { /* Non-fatal */ });
+      try { await processGameAdvancement(roomCode); } catch { /* Non-fatal */ }
     }
   }
 

@@ -553,7 +553,7 @@ export const backgammonModule: GameModule<BackgammonState> = {
       if (newState.currentTurn !== state.currentTurn) {
         roomEvents.push({
           event: 'turn-confirmed',
-          data: { gameState: JSON.parse(JSON.stringify(newState)) },
+          data: { gameState: JSON.parse(JSON.stringify(newState)), legalMoves: newState.dice ? getLegalMoves(newState) : [] },
         });
         if (newState.phase === 'game_over' || newState.phase === 'match_over') {
           roomEvents.push({

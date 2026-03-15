@@ -109,14 +109,14 @@ export function useBackgammon(
       });
     };
 
-    const onMoveUndone = (data: { gameState: SanitizedBackgammonState }) => {
+    const onMoveUndone = (data: { gameState: SanitizedBackgammonState; legalMoves?: CheckerMove[] }) => {
       setBackgammonState(data.gameState);
-      setLegalMoves([]);
+      setLegalMoves(data.legalMoves || []);
     };
 
-    const onTurnConfirmed = (data: { gameState: SanitizedBackgammonState }) => {
+    const onTurnConfirmed = (data: { gameState: SanitizedBackgammonState; legalMoves?: CheckerMove[] }) => {
       setBackgammonState(data.gameState);
-      setLegalMoves([]);
+      setLegalMoves(data.legalMoves || []);
     };
 
     const onTurnPassed = (data: { color: string; reason: string }) => {
