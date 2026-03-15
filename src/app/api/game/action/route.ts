@@ -587,8 +587,8 @@ export async function POST(request: Request) {
       }
       const nextPlayer = botPlayerId ? room.players.find((p) => p.id === botPlayerId) : null;
       if (nextPlayer?.isBot) {
-        // Use Date.now() so processGameAdvancement can act immediately from the action route
-        stateToSave = { ...bgState, botActionAt: Date.now() } as unknown as typeof newState;
+        const delay = bgState.phase === 'rolling' ? 1200 : bgState.phase === 'double_offered' ? 1000 : 800;
+        stateToSave = { ...bgState, botActionAt: Date.now() + delay } as unknown as typeof newState;
       }
     }
   }

@@ -64,6 +64,13 @@ export async function processGameAdvancement(roomCode: string): Promise<void> {
 
   // Recurse if the module indicated more processing is needed
   if (result.recurse) {
+    // Read the updated room to check botActionAt for pacing delays
+    const freshRoom = await getRoom(roomCode);
+    const botActionAt = (freshRoom?.game as Record<string, unknown>)?.botActionAt;
+    if (typeof botActionAt === 'number' && botActionAt > Date.now()) {
+      const delay = Math.min(botActionAt - Date.now(), 3000); // cap at 3s safety
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
     await processGameAdvancement(roomCode);
   }
 }

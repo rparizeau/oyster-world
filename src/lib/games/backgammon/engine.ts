@@ -663,9 +663,9 @@ function handleRoll(state: BackgammonState, color: CheckerColor): BackgammonStat
       botActionAt: null,
     };
   } else {
-    // For bots, set immediate botActionAt so processAdvancement can chain
+    // For bots, set delayed botActionAt so user can see the dice before moves start
     if (newState.botActionAt !== null) {
-      newState = { ...newState, botActionAt: Date.now() };
+      newState = { ...newState, botActionAt: Date.now() + BOT_MOVE_DELAY_MS };
     }
   }
 
@@ -735,9 +735,9 @@ function handleMoveChecker(
     return doConfirmMoves(newState);
   }
 
-  // Set immediate bot timing so processAdvancement chains without delay
+  // Set delayed bot timing so user can see each move
   if (state.botActionAt !== null) {
-    newState = { ...newState, botActionAt: Date.now() };
+    newState = { ...newState, botActionAt: Date.now() + BOT_MOVE_DELAY_MS };
   }
 
   return newState;
